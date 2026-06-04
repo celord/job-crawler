@@ -1420,6 +1420,14 @@
     document.getElementById(id).addEventListener('input', onFilterChange);
   });
 
+  /* tier filter */
+  function getSelectedTiers() {
+    return [...document.querySelectorAll('input[name="tier"]:checked')].map(i => i.value);
+  }
+  document.querySelectorAll('input[name="tier"]').forEach(cb => {
+    cb.addEventListener('change', onFilterChange);
+  });
+
   /* keyword filters — server-side via onFilterChange */
   function syncKeywordClearButtons() {
     ['filter-include', 'filter-exclude'].forEach(id => {
@@ -1510,6 +1518,7 @@
     const sources = overrides.sources ?? getSelectedProviders();
     const inc     = overrides.inc     ?? document.getElementById('filter-include').value.trim();
     const exc     = overrides.exc     ?? document.getElementById('filter-exclude').value.trim();
+    const tiers   = overrides.tiers   ?? getSelectedTiers();
     if (title)          p.set('title', title);
     if (loc)            p.set('location', loc);
     if (company)        p.set('company', company);
@@ -1517,6 +1526,8 @@
     if (sources.length) p.set('sources', sources.join(','));
     if (inc)            p.set('inc', inc);
     if (exc)            p.set('exc', exc);
+    // Only send tiers param if not all 4 selected (avoids unnecessary filter)
+    if (tiers.length > 0 && tiers.length < 4) p.set('tiers', tiers.join(','));
     if (overrides.favCompanies === undefined) {
       const favOnly = document.getElementById('fav-only-toggle').checked;
       if (favOnly && favoriteCompanies.size > 0) {

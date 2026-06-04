@@ -5,6 +5,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import Database from "better-sqlite3";
 import { NormalizedJob } from "./types.js";
+import { classifyTier } from "./normalizers.js";
 
 type CatalogRow = {
   provider: string;
@@ -69,6 +70,7 @@ export class CatalogStore {
       DROP INDEX IF EXISTS catalog_jobs_location_lower_idx;
     `);
     this.ensureColumn("catalog_jobs", "posted_at", "TEXT");
+    this.ensureColumn("catalog_jobs", "skill_tier", "TEXT");
 
     this.upsertOne = this.db.prepare(`
       INSERT INTO catalog_jobs (
@@ -89,7 +91,8 @@ export class CatalogStore {
         first_seen_at,
         last_seen_at,
         seen_run_id,
-        raw_json
+        raw_json,
+        skill_tier
       ) VALUES (
         @provider,
         @source_key,
@@ -108,7 +111,8 @@ export class CatalogStore {
         @first_seen_at,
         @last_seen_at,
         @seen_run_id,
-        @raw_json
+        @raw_json,
+        @skill_tier
       )
       ON CONFLICT(provider, source_key, job_id) DO UPDATE SET
         title = excluded.title,
@@ -123,7 +127,8 @@ export class CatalogStore {
         job_url = excluded.job_url,
         fetched_at = excluded.fetched_at,
         last_seen_at = excluded.last_seen_at,
-        seen_run_id = excluded.seen_run_id
+        seen_run_id = excluded.seen_run_id,
+        skill_tier = excluded.skill_tier
     `);
     this.insertMany = this.db.transaction((rows: NormalizedJob[], runId: string) => {
       const now = new Date().toISOString();
@@ -146,7 +151,8 @@ export class CatalogStore {
           first_seen_at: job.posted_at ?? job.fetched_at ?? now,
           last_seen_at: job.fetched_at ?? now,
           seen_run_id: runId,
-          raw_json: "null"
+          raw_json: "null",
+          skill_tier: job.skill_tier ?? classifyTier(job.title)
         });
       }
     });

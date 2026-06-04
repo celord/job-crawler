@@ -46,6 +46,7 @@ export type NormalizedJob = {
   posted_at: string | null;
   job_url: string | null;
   fetched_at: string;
+  skill_tier?: string | null;
 };
 
 export type CrawlFailure = {

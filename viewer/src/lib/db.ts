@@ -20,6 +20,32 @@ try {
   // column already exists
 }
 
+// Add skill_tier column and backfill existing rows (idempotent)
+try {
+  db.exec(`ALTER TABLE catalog_jobs ADD COLUMN skill_tier TEXT DEFAULT NULL`);
+} catch {
+  // column already exists
+}
+// Backfill rows that have no tier yet using lightweight SQL heuristics.
+// This avoids loading all titles into JS — runs once, fast.
+db.exec(`
+  UPDATE catalog_jobs SET skill_tier = CASE
+    WHEN LOWER(title) GLOB '*intern*' THEN 'intern'
+    WHEN LOWER(title) GLOB '*junior*' OR LOWER(title) GLOB '*jr.*'
+      OR LOWER(title) GLOB '*entry level*' OR LOWER(title) GLOB '*entry-level*'
+      OR LOWER(title) GLOB '*new grad*' OR LOWER(title) GLOB '*graduate*'
+      OR LOWER(title) GLOB '*trainee*' OR LOWER(title) GLOB '*associate*' THEN 'entry'
+    WHEN LOWER(title) GLOB '*senior*' OR LOWER(title) GLOB '*sr.*'
+      OR LOWER(title) GLOB '*principal*' OR LOWER(title) GLOB '*staff *'
+      OR LOWER(title) GLOB '*lead *' OR LOWER(title) GLOB '* lead'
+      OR LOWER(title) GLOB '*director*' OR LOWER(title) GLOB '*vp *'
+      OR LOWER(title) GLOB '*vice president*' OR LOWER(title) GLOB '*head of*'
+      OR LOWER(title) GLOB '*manager*' OR LOWER(title) GLOB '*architect*' THEN 'senior'
+    ELSE 'mid'
+  END
+  WHERE skill_tier IS NULL
+`);
+
 // FTS5 virtual table for fast title + location search
 db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS catalog_jobs_fts USING fts5(

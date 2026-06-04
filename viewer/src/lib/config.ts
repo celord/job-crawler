@@ -25,6 +25,10 @@ export const CRAWLER_ACTIVE_LOCK_STALE_MS = parseInt(process.env.CRAWLER_ACTIVE_
 export const CRAWLER_PROGRESS_PATH = process.env.CRAWLER_PROGRESS_PATH ?? join(STATE_DIR, "crawler-progress.json");
 export const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL?.trim() ?? "";
 export const SCORE_NOTIFY_MIN_SCORE = parseFloat(process.env.SCORE_NOTIFY_MIN_SCORE ?? "4");
+// Tiers skipped before sending to LLM. Comma-separated. Default: intern only.
+export const SKIP_TIERS = new Set(
+  (process.env.SKIP_TIERS ?? "intern").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+);
 
 export const LOGO_CACHE_MAX = 2000;
 

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { appendFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import type { JobRow, MatchRunManifest, ParsedJobPost, RunCommandOptions, QueueItem, QueueSubtask, QueueTaskStatus } from "./types.js";
 import {
+  SKIP_TIERS,
   MATCH_RUNS_DIR,
   MATCHER_DIR,
   PYTHON_BIN,
@@ -473,6 +474,16 @@ export async function executeMatchRun(runId: string, jobs: JobRow[], mode?: stri
     return;
   }
 
+  // Skip tiers that shouldn't consume LLM tokens (configurable via SKIP_TIERS env var)
+  if (SKIP_TIERS.size > 0) {
+    const before = jobs.length;
+    jobs = jobs.filter((j) => !j.skill_tier || !SKIP_TIERS.has(j.skill_tier));
+    const skipped = before - jobs.length;
+    if (skipped > 0) {
+      console.log(`[match-run ${runId}] skipped ${skipped} job(s) — tier filter (${[...SKIP_TIERS].join(",")})`);
+    }
+  }
+
   activeRunIds.add(runId);
 
   const effectiveMode = mode ?? "claude";
@@ -641,7 +652,7 @@ export function killRun(runId: string): boolean {
 
 const ENSEMBLE_SCORER_LABELS: Record<string, string> = {
   "llama-4-maverick-17b-128e-instruct": "Maverick scorer",
-  "kimi-k2-instruct": "Kimi-K2 scorer",
+  "kimi-k2.6": "Kimi-K2.6 scorer",
   "llama-3.3-nemotron-super-49b-v1.5": "Nemotron scorer",
 };
 
@@ -651,7 +662,7 @@ function shortModelName(fullId: string): string {
 
 function buildSubtasks(mode: string): QueueSubtask[] {
   if (mode === "claude-ensemble") {
-    const scorerEnv = process.env.NVIDIA_ENSEMBLE_SCORERS || "meta/llama-4-maverick-17b-128e-instruct,moonshotai/kimi-k2-instruct,nvidia/llama-3.3-nemotron-super-49b-v1.5";
+    const scorerEnv = process.env.NVIDIA_ENSEMBLE_SCORERS || "meta/llama-4-maverick-17b-128e-instruct,moonshotai/kimi-k2.6,nvidia/llama-3.3-nemotron-super-49b-v1.5";
     const synthEnv = process.env.NVIDIA_ENSEMBLE_SYNTHESIZER || "nvidia/llama-3.3-nemotron-super-49b-v1.5";
     const scorerIds = ["scorer:maverick", "scorer:kimi", "scorer:nemotron"];
     const scorerSubtasks = scorerEnv.split(",").map((m, i) => ({

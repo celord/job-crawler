@@ -53,6 +53,7 @@ export function addJobFilterConditions(
     favCompanies?: string[] | null;
     include?: string | null;
     exclude?: string | null;
+    tiers?: string | null;
   },
 ): { conditions: string[]; params: unknown[] } {
   const conditions: string[] = [];
@@ -132,6 +133,15 @@ export function addJobFilterConditions(
       conditions.push("COALESCE(posted_at, first_seen_at) >= datetime('now', ?)");
       params.push(`-${n} days`);
     }
+  }
+
+  // tiers: comma-separated tier names to SHOW (intern/entry/mid/senior). If empty = show all.
+  const tierList = String(filters.tiers ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  if (tierList.length > 0) {
+    const tierClauses = tierList.map(() => "skill_tier = ?");
+    // Also include NULL tiers (unclassified jobs) so older rows aren't hidden
+    conditions.push(`(skill_tier IS NULL OR ${tierClauses.join(" OR ")})`);
+    for (const tier of tierList) params.push(tier);
   }
 
   // include: comma-separated terms, each must appear in title OR location OR source_key
