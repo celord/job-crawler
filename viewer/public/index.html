@@ -91,6 +91,34 @@
         <label class="filter-label" for="filter-days">Max age</label>
         <input id="filter-days" class="filter-input" type="number" min="1" placeholder="7" />
       </div>
+      <div class="filter-group">
+        <label class="filter-label" for="filter-score">Score</label>
+        <select id="filter-score" class="filter-input">
+          <option value="">All</option>
+          <option value="none">No score yet</option>
+          <option value="4plus">Score ≥ 4</option>
+        </select>
+      </div>
+    </div>
+    <div class="filters-keyword-row">
+      <div class="filter-group">
+        <label class="filter-label" for="filter-include">Must include</label>
+        <div class="keyword-input-wrap">
+          <input id="filter-include" class="filter-input" type="text" placeholder="TPM, program manager" autocomplete="off" />
+          <button type="button" class="keyword-clear" id="filter-include-clear" aria-label="Clear">×</button>
+        </div>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label" for="filter-exclude">Exclude</label>
+        <div class="keyword-input-wrap">
+          <input id="filter-exclude" class="filter-input" type="text" placeholder="data science, ML, intern" autocomplete="off" />
+          <button type="button" class="keyword-clear" id="filter-exclude-clear" aria-label="Clear">×</button>
+        </div>
+      </div>
+      <div class="filter-group keyword-count-group">
+        <span class="filter-label">&nbsp;</span>
+        <span id="keyword-filter-count" class="keyword-filter-count"></span>
+      </div>
     </div>
   </section>
 

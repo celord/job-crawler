@@ -254,6 +254,34 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  /* ── Keyword include/exclude filter ─────────────────────────── */
+  function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function parseKeywordInput(raw) {
+    return raw.split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(s => new RegExp('\\b' + escapeRegex(s) + '\\b', 'i'));
+  }
+
+  function applyKeywordFilters(jobs) {
+    const incRaw = document.getElementById('filter-include').value.trim();
+    const excRaw = document.getElementById('filter-exclude').value.trim();
+    const incRx  = parseKeywordInput(incRaw);
+    const excRx  = parseKeywordInput(excRaw);
+    if (incRx.length === 0 && excRx.length === 0) return { jobs, active: false };
+
+    const filtered = jobs.filter(job => {
+      const hay = [job.title, job.company, job.location].filter(Boolean).join(' ');
+      const passInc = incRx.length === 0 || incRx.every(rx => rx.test(hay));
+      const passExc = excRx.length === 0 || !excRx.some(rx => rx.test(hay));
+      return passInc && passExc;
+    });
+    return { jobs: filtered, active: true, before: jobs.length, after: filtered.length };
+  }
+
   /* ── Card analysis block (TL;DR + tiny scorecard + pills) ──── */
   const CARD_SC_LABELS = {
     core_skills:           'Core',
@@ -1041,6 +1069,14 @@
   }
 
   async function analyzeJob(job, _triggerEl, mode) {
+    if (mode === 'claude-ensemble') {
+      const params = new URLSearchParams({ provider: job.provider, source_key: job.source_key, job_id: job.job_id });
+      const probe = await fetch(`/api/job-parsed?${params}`);
+      if (!probe.ok) {
+        openPasteJdModal(job, mode);
+        return;
+      }
+    }
     const spinnerLabel = mode === 'claude-ensemble' ? 'Analyzing pipeline…' : 'Analyzing…';
     setMainBtnSpinner(job, spinnerLabel, mode);
     const comp = companyName(job);
@@ -1411,6 +1447,28 @@
   ['filter-title','filter-location','filter-company','filter-days'].forEach(id => {
     document.getElementById(id).addEventListener('input', onFilterChange);
   });
+
+  /* keyword filters — client-side only, no server refetch */
+  function onKeywordChange() {
+    ['filter-include', 'filter-exclude'].forEach(id => {
+      const val = document.getElementById(id).value;
+      const btn = document.getElementById(id + '-clear');
+      btn.classList.toggle('visible', val.length > 0);
+    });
+    renderCurrentView();
+  }
+  ['filter-include', 'filter-exclude'].forEach(id => {
+    document.getElementById(id).addEventListener('input', onKeywordChange);
+  });
+  document.getElementById('filter-include-clear').addEventListener('click', () => {
+    document.getElementById('filter-include').value = '';
+    onKeywordChange();
+  });
+  document.getElementById('filter-exclude-clear').addEventListener('click', () => {
+    document.getElementById('filter-exclude').value = '';
+    onKeywordChange();
+  });
+
   function refetchFromToggle() {
     if (fetchJobsController) fetchJobsController.abort();
     fetchJobsController = new AbortController();
@@ -1418,10 +1476,19 @@
   }
   document.getElementById('fav-only-toggle').addEventListener('change', refetchFromToggle);
   document.getElementById('evaluated-only-toggle').addEventListener('change', refetchFromToggle);
+  document.getElementById('filter-score').addEventListener('change', refetchFromToggle);
 
   /* ── Render current view ─────────────────────────────────────── */
   function getRenderableJobs() {
-    return allJobs.filter(job => !hiddenJobs.has(jobKey(job)));
+    const visible = allJobs.filter(job => !hiddenJobs.has(jobKey(job)));
+    const { jobs, active, before, after } = applyKeywordFilters(visible);
+    const countEl = document.getElementById('keyword-filter-count');
+    if (active) {
+      countEl.textContent = `${after.toLocaleString()} of ${before.toLocaleString()} shown`;
+    } else {
+      countEl.textContent = '';
+    }
+    return jobs;
   }
 
   function renderCurrentView() {
@@ -1492,6 +1559,10 @@
     }
     if (overrides.evaluated === undefined) {
       if (document.getElementById('evaluated-only-toggle').checked) p.set('evaluated', '1');
+    }
+    if (overrides.score === undefined) {
+      const scoreVal = document.getElementById('filter-score').value;
+      if (scoreVal) p.set('score', scoreVal);
     }
     return p;
   }
