@@ -177,13 +177,15 @@ body {
 
 .filters-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 0.6fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   align-items: end;
 }
-.filters-grid > .filter-group:first-child {
-  grid-column: 1 / -1;
-}
+/* Row 1: Job title full width */
+.filter-group--title { grid-column: 1 / -1; }
+/* Row 2: Include + Exclude each take 2 cols */
+.filter-group--include { grid-column: span 2; }
+.filter-group--exclude { grid-column: span 2; }
 .filter-group { display: flex; flex-direction: column; gap: 5px; }
 .filter-label {
   font-size: 10.5px;
@@ -209,14 +211,7 @@ body {
 .filter-input:focus { border-color: var(--muted-2); }
 .filter-input::placeholder { color: var(--muted-2); }
 
-/* keyword include/exclude row */
-.filters-keyword-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 10px;
-  align-items: end;
-  margin-top: 8px;
-}
+/* keyword include/exclude inputs */
 .keyword-input-wrap {
   position: relative;
 }
@@ -239,14 +234,6 @@ body {
 }
 .keyword-clear.visible { display: block; }
 .keyword-clear:hover { color: var(--ink); }
-.keyword-filter-count {
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-  height: 34px;
-  display: flex;
-  align-items: center;
-}
 
 /* provider dropdown */
 .provider-dropdown { position: relative; }

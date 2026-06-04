@@ -51,6 +51,8 @@ export function addJobFilterConditions(
     sources?: string | string[] | null;
     days?: string | number | null;
     favCompanies?: string[] | null;
+    include?: string | null;
+    exclude?: string | null;
   },
 ): { conditions: string[]; params: unknown[] } {
   const conditions: string[] = [];
@@ -130,6 +132,20 @@ export function addJobFilterConditions(
       conditions.push("COALESCE(posted_at, first_seen_at) >= datetime('now', ?)");
       params.push(`-${n} days`);
     }
+  }
+
+  // include: comma-separated terms, each must appear in title OR location OR source_key
+  const includeTerms = String(filters.include ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  for (const term of includeTerms) {
+    conditions.push("(LOWER(title) LIKE ? OR LOWER(location) LIKE ? OR LOWER(source_key) LIKE ?)");
+    params.push(`%${term}%`, `%${term}%`, `%${term}%`);
+  }
+
+  // exclude: comma-separated terms, none may appear in title OR location OR source_key
+  const excludeTerms = String(filters.exclude ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  for (const term of excludeTerms) {
+    conditions.push("(LOWER(title) NOT LIKE ? AND LOWER(location) NOT LIKE ? AND LOWER(source_key) NOT LIKE ?)");
+    params.push(`%${term}%`, `%${term}%`, `%${term}%`);
   }
 
   if (filters.favCompanies && filters.favCompanies.length > 0) {

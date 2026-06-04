@@ -55,7 +55,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.static(join(__dirname, "../public")));
 
 app.get("/api/jobs", async (req, res) => {
-  const { title, location, days, company, sources, page, limit, favCompanies, evaluated } = req.query as Record<string, string>;
+  const { title, location, days, company, sources, page, limit, favCompanies, evaluated, score, inc, exc } = req.query as Record<string, string>;
 
   const pageNum = Math.max(1, parseInt(page ?? "1", 10));
   const pageSize = Math.min(500, Math.max(1, parseInt(limit ?? "50", 10)));
@@ -66,10 +66,15 @@ app.get("/api/jobs", async (req, res) => {
 
   const favList = favCompanies ? favCompanies.split(",").map((s) => s.trim()).filter(Boolean) : null;
 
-  const { conditions, params } = addJobFilterConditions({ title, location, company, sources, days, favCompanies: favList });
+  const { conditions, params } = addJobFilterConditions({ title, location, company, sources, days, favCompanies: favList, include: inc, exclude: exc });
 
   if (evaluatedOnly) {
     conditions.push("analysis_score IS NOT NULL AND analysis_score > 0");
+  }
+  if (score === "none") {
+    conditions.push("(analysis_score IS NULL OR analysis_score = 0)");
+  } else if (score === "4plus") {
+    conditions.push("analysis_score >= 4");
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -190,7 +195,7 @@ app.get("/api/crawl-status", async (_req, res) => {
 });
 
 app.get("/api/config", (_req, res) => {
-  const scorers = (process.env.NVIDIA_ENSEMBLE_SCORERS || "meta/llama-4-maverick-17b-128e-instruct,moonshotai/kimi-k2-instruct,nvidia/llama-3.3-nemotron-super-49b-v1.5")
+  const scorers = (process.env.NVIDIA_ENSEMBLE_SCORERS || "meta/llama-4-maverick-17b-128e-instruct,moonshotai/kimi-k2.6,nvidia/llama-3.3-nemotron-super-49b-v1.5")
     .split(",").map((s) => s.trim().split("/").pop() ?? s.trim()).filter(Boolean);
   const synthesizer = (process.env.NVIDIA_ENSEMBLE_SYNTHESIZER || "nvidia/llama-3.3-nemotron-super-49b-v1.5")
     .trim().split("/").pop() ?? "";

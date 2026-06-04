@@ -254,34 +254,6 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  /* ── Keyword include/exclude filter ─────────────────────────── */
-  function escapeRegex(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  function parseKeywordInput(raw) {
-    return raw.split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-      .map(s => new RegExp('\\b' + escapeRegex(s) + '\\b', 'i'));
-  }
-
-  function applyKeywordFilters(jobs) {
-    const incRaw = document.getElementById('filter-include').value.trim();
-    const excRaw = document.getElementById('filter-exclude').value.trim();
-    const incRx  = parseKeywordInput(incRaw);
-    const excRx  = parseKeywordInput(excRaw);
-    if (incRx.length === 0 && excRx.length === 0) return { jobs, active: false };
-
-    const filtered = jobs.filter(job => {
-      const hay = [job.title, job.company, job.location].filter(Boolean).join(' ');
-      const passInc = incRx.length === 0 || incRx.every(rx => rx.test(hay));
-      const passExc = excRx.length === 0 || !excRx.some(rx => rx.test(hay));
-      return passInc && passExc;
-    });
-    return { jobs: filtered, active: true, before: jobs.length, after: filtered.length };
-  }
-
   /* ── Card analysis block (TL;DR + tiny scorecard + pills) ──── */
   const CARD_SC_LABELS = {
     core_skills:           'Core',
@@ -1448,25 +1420,25 @@
     document.getElementById(id).addEventListener('input', onFilterChange);
   });
 
-  /* keyword filters — client-side only, no server refetch */
-  function onKeywordChange() {
+  /* keyword filters — server-side via onFilterChange */
+  function syncKeywordClearButtons() {
     ['filter-include', 'filter-exclude'].forEach(id => {
       const val = document.getElementById(id).value;
-      const btn = document.getElementById(id + '-clear');
-      btn.classList.toggle('visible', val.length > 0);
+      document.getElementById(id + '-clear').classList.toggle('visible', val.length > 0);
     });
-    renderCurrentView();
   }
   ['filter-include', 'filter-exclude'].forEach(id => {
-    document.getElementById(id).addEventListener('input', onKeywordChange);
+    document.getElementById(id).addEventListener('input', () => { syncKeywordClearButtons(); onFilterChange(); });
   });
   document.getElementById('filter-include-clear').addEventListener('click', () => {
     document.getElementById('filter-include').value = '';
-    onKeywordChange();
+    syncKeywordClearButtons();
+    onFilterChange();
   });
   document.getElementById('filter-exclude-clear').addEventListener('click', () => {
     document.getElementById('filter-exclude').value = '';
-    onKeywordChange();
+    syncKeywordClearButtons();
+    onFilterChange();
   });
 
   function refetchFromToggle() {
@@ -1480,15 +1452,7 @@
 
   /* ── Render current view ─────────────────────────────────────── */
   function getRenderableJobs() {
-    const visible = allJobs.filter(job => !hiddenJobs.has(jobKey(job)));
-    const { jobs, active, before, after } = applyKeywordFilters(visible);
-    const countEl = document.getElementById('keyword-filter-count');
-    if (active) {
-      countEl.textContent = `${after.toLocaleString()} of ${before.toLocaleString()} shown`;
-    } else {
-      countEl.textContent = '';
-    }
-    return jobs;
+    return allJobs.filter(job => !hiddenJobs.has(jobKey(job)));
   }
 
   function renderCurrentView() {
@@ -1544,11 +1508,15 @@
     const company = overrides.company ?? document.getElementById('filter-company').value.trim();
     const days    = overrides.days    ?? document.getElementById('filter-days').value.trim();
     const sources = overrides.sources ?? getSelectedProviders();
+    const inc     = overrides.inc     ?? document.getElementById('filter-include').value.trim();
+    const exc     = overrides.exc     ?? document.getElementById('filter-exclude').value.trim();
     if (title)          p.set('title', title);
     if (loc)            p.set('location', loc);
     if (company)        p.set('company', company);
     if (days)           p.set('days', days);
     if (sources.length) p.set('sources', sources.join(','));
+    if (inc)            p.set('inc', inc);
+    if (exc)            p.set('exc', exc);
     if (overrides.favCompanies === undefined) {
       const favOnly = document.getElementById('fav-only-toggle').checked;
       if (favOnly && favoriteCompanies.size > 0) {
