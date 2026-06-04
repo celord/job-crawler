@@ -1,6 +1,7 @@
 import { ashbyCrawler } from "./ashby.js";
 import { bamboohrCrawler } from "./bamboohr.js";
 import { greenhouseCrawler } from "./greenhouse.js";
+import { icimsProvider } from "./icims.js";
 import { leverCrawler } from "./lever.js";
 import { smartrecruitersCrawler } from "./smartrecruiters.js";
 import { teamtailorCrawler } from "./teamtailor.js";
@@ -12,6 +13,7 @@ const crawlers = [
   ashbyCrawler,
   bamboohrCrawler,
   greenhouseCrawler,
+  icimsProvider,
   leverCrawler,
   smartrecruitersCrawler,
   teamtailorCrawler,

@@ -9,7 +9,7 @@ Run with catalog persistence (SQLite + JSONL output):
 ```bash
 docker compose run --rm crawler \
   --concurrency 8 \
-  --provider-concurrency ashby=1,workday=4,lever=3,teamtailor=2,bamboohr=3,greenhouse=6,workable=2,smartrecruiters=2 \
+  --provider-concurrency ashby=1,workday=4,lever=3,teamtailor=2,bamboohr=3,greenhouse=6,workable=2,smartrecruiters=2,icims=5 \
   --timeout-ms 30000 \
   --retries 5 \
   --exclude-sources /app/state/exclude.jsonl \
@@ -60,7 +60,7 @@ Best for stability. Use when hitting rate limits or 403/429 errors.
 ```bash
 docker compose run --rm crawler \
   --concurrency 8 \
-  --provider-concurrency ashby=1,workday=4,lever=3,teamtailor=2,bamboohr=3,greenhouse=6,workable=2,smartrecruiters=2 \
+  --provider-concurrency ashby=1,workday=4,lever=3,teamtailor=2,bamboohr=3,greenhouse=6,workable=2,smartrecruiters=2,icims=5 \
   --timeout-ms 30000 \
   --retries 5 \
   --exclude-sources /app/state/exclude.jsonl \
@@ -77,7 +77,7 @@ Compromise between runtime and stability.
 ```bash
 docker compose run --rm crawler \
   --concurrency 20 \
-  --provider-concurrency ashby=2,workday=15,lever=15 \
+  --provider-concurrency ashby=2,workday=15,lever=15,icims=8 \
   --timeout-ms 20000 \
   --retries 3 \
   --catalog-db /app/state/catalog.sqlite \
@@ -91,7 +91,7 @@ Fastest runtime but higher refusal/rate-limit risk.
 ```bash
 docker compose run --rm crawler \
   --concurrency 50 \
-  --provider-concurrency ashby=2 \
+  --provider-concurrency ashby=2,icims=10 \
   --timeout-ms 15000 \
   --retries 2 \
   --catalog-db /app/state/catalog.sqlite \
@@ -121,6 +121,15 @@ docker compose run --rm crawler \
 The exclusion file is a JSONL of sources that returned 404 or permanent errors in previous runs.
 This prevents re-crawling known-broken sources.
 When the crawler runs through the Docker entrypoint, the post-crawl hook automatically appends new `404`/`410` failures to `crawler/state/exclude.jsonl` after a successful run.
+
+## Provider Notes
+
+### iCIMS
+- **Mechanism**: XML sitemap at `https://careers-{slug}.icims.com/sitemap.xml`
+- **Data available**: title (reconstructed from URL slug), job URL, job ID
+- **Not available**: location, employment type, compensation, posted date — the sitemap does not expose these fields. Fetching individual job pages would provide them but is too costly at ~10k sources.
+- **Rate limit posture**: conservative — max 5–10 concurrent requests. iCIMS has no published rate limits but blocks aggressively. Dead slugs accumulate fast (~40% of the 9,937 listed companies are inactive); the exclude file eliminates the overhead on subsequent runs.
+- **Source file**: `sources/icims.json` — 9,937 slugs from Common Crawl harvesting (same list as job-board-aggregator).
 
 ## Scheduler Service
 

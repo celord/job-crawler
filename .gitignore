@@ -29,3 +29,10 @@ matcher/*/profile.yml
 matcher/*/portals.yml
 matcher/*/cv.md
 matcher/*/_profile.md
+
+# Planning & user stories (local only)
+user-stories/
+BACKLOG.md
+greenhouse.md
+next work.md
+operations.md

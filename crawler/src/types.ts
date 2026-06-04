@@ -2,6 +2,7 @@ export const providers = [
   "ashby",
   "bamboohr",
   "greenhouse",
+  "icims",
   "lever",
   "smartrecruiters",
   "teamtailor",
