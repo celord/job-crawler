@@ -136,11 +136,11 @@ export function addJobFilterConditions(
   }
 
   // tiers: comma-separated tier names to SHOW (intern/entry/mid/senior). If empty = show all.
+  // NULLs are included only when all 4 tiers are selected (= no filtering).
   const tierList = String(filters.tiers ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (tierList.length > 0) {
+  if (tierList.length > 0 && tierList.length < 4) {
     const tierClauses = tierList.map(() => "skill_tier = ?");
-    // Also include NULL tiers (unclassified jobs) so older rows aren't hidden
-    conditions.push(`(skill_tier IS NULL OR ${tierClauses.join(" OR ")})`);
+    conditions.push(`(${tierClauses.join(" OR ")})`);
     for (const tier of tierList) params.push(tier);
   }
 
