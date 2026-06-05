@@ -71,7 +71,11 @@ export async function runCrawler(options: RunOptions): Promise<CrawlReport> {
   const output = createWriteStream(options.outFile, { encoding: "utf8" });
   const writer = new JsonlWriter(output);
   const seenJobs = new Set<string>();
+  // JSON API providers (Greenhouse, Lever, Ashby, SmartRecruiters) have proper
+  // rate-limit headers and don't need jitter. HTML-scraping providers do.
+  const HTML_SCRAPING_PROVIDERS = new Set<Provider>(["bamboohr", "workday", "teamtailor", "workable", "icims"]);
   const http = createHttpClient({ timeoutMs: options.timeoutMs, retries: options.retries });
+  const httpWithJitter = createHttpClient({ timeoutMs: options.timeoutMs, retries: options.retries, jitterMs: [300, 1200] });
 
   let cursor = 0;
   let completed = 0;
@@ -106,7 +110,7 @@ export async function runCrawler(options: RunOptions): Promise<CrawlReport> {
         const jobs = await providerLimiters[item.provider].run(async () => {
           const fetchedAt = new Date().toISOString();
           return crawler.crawl(item.source, {
-            http,
+            http: HTML_SCRAPING_PROVIDERS.has(item.provider) ? httpWithJitter : http,
             fetchedAt: () => fetchedAt,
             maxJobsPerSource: options.maxJobsPerSource,
             urlTemplate: item.urlTemplate,

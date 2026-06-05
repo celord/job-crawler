@@ -31,7 +31,7 @@ const defaults: CliOptions = {
   report: "/app/output/report.json",
   catalogDbFile: "/app/state/catalog.sqlite",
   progressEveryMs: 10000,
-  providerConcurrency: { ashby: 2 },
+  providerConcurrency: { ashby: 2, bamboohr: 10, workday: 5, teamtailor: 10, workable: 10, icims: 5 },
   timeoutMs: 15000,
   retries: 2,
   progressFile: "/app/state/crawler-progress.json",

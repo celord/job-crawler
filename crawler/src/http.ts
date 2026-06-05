@@ -14,13 +14,37 @@ export class HttpError extends Error {
 export type HttpOptions = {
   timeoutMs: number;
   retries: number;
+  // When set, wait a random delay in [min, max] ms before each request.
+  // Use for HTML-scraping providers (BambooHR, Workday, TeamTailor, Workable)
+  // to reduce the risk of silent blocking. Leave unset for JSON API providers.
+  jitterMs?: [min: number, max: number];
 };
+
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
+  "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
+];
+
+function randomUA(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]!;
+}
 
 const transientStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 export function createHttpClient(options: HttpOptions): HttpClient {
   async function request(url: string, init: RequestInit = {}): Promise<Response> {
     let lastError: unknown;
+
+    if (options.jitterMs) {
+      const [min, max] = options.jitterMs;
+      await delay(min + Math.random() * (max - min));
+    }
 
     for (let attempt = 0; attempt <= options.retries; attempt += 1) {
       const controller = new AbortController();
@@ -31,7 +55,7 @@ export function createHttpClient(options: HttpOptions): HttpClient {
           ...init,
           signal: controller.signal,
           headers: {
-            "User-Agent": "job-scrapper-crawler/1.0",
+            "User-Agent": randomUA(),
             ...init.headers
           }
         });
@@ -103,7 +127,9 @@ function normalizeError(error: unknown, url: string): Error {
 }
 
 function backoffMs(attempt: number): number {
-  return Math.min(5000, 250 * 2 ** attempt);
+  // Exponential backoff with ±20% random jitter to avoid thundering herd
+  const base = Math.min(5000, 250 * 2 ** attempt);
+  return base + Math.random() * base * 0.4 - base * 0.2;
 }
 
 function delay(ms: number): Promise<void> {
