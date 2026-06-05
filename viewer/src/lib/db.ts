@@ -46,6 +46,28 @@ db.exec(`
   WHERE skill_tier IS NULL
 `);
 
+// Add employment_type_canonical column and backfill (idempotent)
+try {
+  db.exec(`ALTER TABLE catalog_jobs ADD COLUMN employment_type_canonical TEXT DEFAULT NULL`);
+} catch {
+  // column already exists
+}
+db.exec(`
+  UPDATE catalog_jobs SET employment_type_canonical = CASE
+    WHEN employment_type IS NULL OR TRIM(employment_type) = '' THEN NULL
+    WHEN LOWER(employment_type) GLOB '*intern*' THEN 'Internship'
+    WHEN LOWER(employment_type) GLOB '*volunteer*' THEN 'Volunteer'
+    WHEN LOWER(employment_type) GLOB '*temp*' OR LOWER(employment_type) GLOB '*casual*' THEN 'Temporary'
+    WHEN LOWER(employment_type) GLOB '*part*time*' OR LOWER(employment_type) = 'p/t' THEN 'Part-time'
+    WHEN LOWER(employment_type) GLOB '*contract*' OR LOWER(employment_type) GLOB '*freelance*' THEN 'Contract'
+    WHEN LOWER(employment_type) GLOB '*full*time*' OR LOWER(employment_type) GLOB '*permanent*'
+      OR LOWER(employment_type) GLOB '*regular*' OR LOWER(employment_type) = 'cdi'
+      OR LOWER(employment_type) = 'employee' THEN 'Full-time'
+    ELSE NULL
+  END
+  WHERE employment_type_canonical IS NULL AND employment_type IS NOT NULL
+`);
+
 // FTS5 virtual table for fast title + location search
 db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS catalog_jobs_fts USING fts5(

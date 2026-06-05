@@ -1,3 +1,21 @@
+export type EmploymentTypeCanonical = "Full-time" | "Part-time" | "Contract" | "Internship" | "Temporary" | "Volunteer";
+
+export function canonicalizeEmploymentType(raw: string | null): EmploymentTypeCanonical | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  // Discard misplaced ATS job IDs (e.g. "JR-12345", "REQ-001")
+  if (/^[A-Za-z]{0,4}[\d\-_/]{3,}$/.test(s)) return null;
+
+  const t = s.toLowerCase();
+  if (/\bintern(ship)?\b/.test(t))                                      return "Internship";
+  if (/\bvolunteer\b/.test(t))                                           return "Volunteer";
+  if (/\btemp(orar(y|ily))?\b|\bcasual\b/.test(t))                     return "Temporary";
+  if (/\bpart[\s_-]?time\b|\bp[\s_-]?t\b/.test(t))                     return "Part-time";
+  if (/\b(contract(or)?|freelance|independent contractor|ctr)\b/.test(t)) return "Contract";
+  if (/\b(full[\s_-]?time|f[\s_-]?t|permanent|regular|cdi|employee)\b/.test(t)) return "Full-time";
+  return null;
+}
+
 export type SkillTier = "intern" | "entry" | "mid" | "senior";
 
 export function classifyTier(title: string | null): SkillTier {

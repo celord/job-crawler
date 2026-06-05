@@ -42,6 +42,7 @@ export type JobRow = {
   last_seen_at: string;
   parsed_jd?: string | null;
   skill_tier?: string | null;
+  employment_type_canonical?: string | null;
   analysis?: unknown;
 };
 

@@ -54,6 +54,7 @@ export function addJobFilterConditions(
     include?: string | null;
     exclude?: string | null;
     tiers?: string | null;
+    types?: string | null;
   },
 ): { conditions: string[]; params: unknown[] } {
   const conditions: string[] = [];
@@ -133,6 +134,14 @@ export function addJobFilterConditions(
       conditions.push("COALESCE(posted_at, first_seen_at) >= datetime('now', ?)");
       params.push(`-${n} days`);
     }
+  }
+
+  // types: comma-separated canonical employment types to SHOW. NULLs always shown.
+  const typeList = String(filters.types ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (typeList.length > 0) {
+    const typeClauses = typeList.map(() => "employment_type_canonical = ?");
+    conditions.push(`(employment_type_canonical IS NULL OR ${typeClauses.join(" OR ")})`);
+    for (const t of typeList) params.push(t);
   }
 
   // tiers: comma-separated tier names to SHOW (intern/entry/mid/senior). If empty = show all.

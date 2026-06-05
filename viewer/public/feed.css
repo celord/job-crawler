@@ -211,8 +211,9 @@ body {
 .filter-input:focus { border-color: var(--muted-2); }
 .filter-input::placeholder { color: var(--muted-2); }
 
-/* Level tier checkboxes */
+/* Level tier + employment type checkboxes */
 .filter-group--tiers { grid-column: span 2; }
+.filter-group--types { grid-column: span 2; }
 .tier-checkboxes {
   display: flex;
   gap: 6px;

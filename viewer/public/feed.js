@@ -1428,6 +1428,14 @@
     cb.addEventListener('change', onFilterChange);
   });
 
+  /* employment type filter */
+  function getSelectedTypes() {
+    return [...document.querySelectorAll('input[name="emptype"]:checked')].map(i => i.value);
+  }
+  document.querySelectorAll('input[name="emptype"]').forEach(cb => {
+    cb.addEventListener('change', onFilterChange);
+  });
+
   /* keyword filters — server-side via onFilterChange */
   function syncKeywordClearButtons() {
     ['filter-include', 'filter-exclude'].forEach(id => {
@@ -1519,6 +1527,7 @@
     const inc     = overrides.inc     ?? document.getElementById('filter-include').value.trim();
     const exc     = overrides.exc     ?? document.getElementById('filter-exclude').value.trim();
     const tiers   = overrides.tiers   ?? getSelectedTiers();
+    const types   = overrides.types   ?? getSelectedTypes();
     if (title)          p.set('title', title);
     if (loc)            p.set('location', loc);
     if (company)        p.set('company', company);
@@ -1526,8 +1535,8 @@
     if (sources.length) p.set('sources', sources.join(','));
     if (inc)            p.set('inc', inc);
     if (exc)            p.set('exc', exc);
-    // Only send tiers param if not all 4 selected (avoids unnecessary filter)
     if (tiers.length > 0 && tiers.length < 4) p.set('tiers', tiers.join(','));
+    if (types.length > 0 && types.length < 5) p.set('types', types.join(','));
     if (overrides.favCompanies === undefined) {
       const favOnly = document.getElementById('fav-only-toggle').checked;
       if (favOnly && favoriteCompanies.size > 0) {
