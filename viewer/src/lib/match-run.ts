@@ -468,6 +468,30 @@ export async function executeMatchRunFromInput(runId: string, mode?: string): Pr
   }
 }
 
+/**
+ * Run embed_retrieve.py to get the top-K job keys closest to the user's
+ * target roles. Returns a Set of "provider|source_key|job_id" keys, or null
+ * if the corpus / ONNX model is unavailable (caller skips the filter).
+ */
+async function embedRetrieveFilter(topK: number): Promise<Set<string> | null> {
+  const retrieveScript = join(MATCHER_DIR, "embed_retrieve.py");
+  const profileDir = join(MATCHER_DIR, CAREER_OPS_DIR);
+  try {
+    const stdout = await runCommand(
+      PYTHON_BIN,
+      [retrieveScript, "--from-profile", "--top-k", String(topK), "--profile-dir", profileDir],
+      { logStdout: false, logStderr: false }
+    );
+    const keys = stdout.split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.includes("|") && !l.startsWith("Target") && !l.startsWith("Top") && !l.startsWith("❌"));
+    if (keys.length === 0) return null;
+    return new Set(keys);
+  } catch {
+    return null;
+  }
+}
+
 export async function executeMatchRun(runId: string, jobs: JobRow[], mode?: string): Promise<void> {
   const manifest = await readManifest(runId);
   if (manifest === null) {
@@ -481,6 +505,18 @@ export async function executeMatchRun(runId: string, jobs: JobRow[], mode?: stri
     const skipped = before - jobs.length;
     if (skipped > 0) {
       console.log(`[match-run ${runId}] skipped ${skipped} job(s) — tier filter (${[...SKIP_TIERS].join(",")})`);
+    }
+  }
+
+  // Embedding retrieve: only send top-K semantically closest jobs to LLM.
+  // Skipped if corpus or ONNX model is not built yet (no-op fallback).
+  if (jobs.length > 1) {
+    const TOP_K = parseInt(process.env.EMBED_RETRIEVE_TOP_K ?? "30", 10);
+    const allowed = await embedRetrieveFilter(Math.max(TOP_K, jobs.length));
+    if (allowed !== null) {
+      const before = jobs.length;
+      jobs = jobs.filter((j) => allowed.has(`${j.provider}|${j.source_key}|${j.job_id}`));
+      console.log(`[match-run ${runId}] embed retrieve: ${jobs.length}/${before} jobs kept (top-${TOP_K})`);
     }
   }
 

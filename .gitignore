@@ -29,6 +29,8 @@ matcher/*/profile.yml
 matcher/*/portals.yml
 matcher/*/cv.md
 matcher/*/_profile.md
+matcher/onnx_minilm/
+matcher/.scorer_cache/
 
 # Planning & user stories (local only)
 user-stories/
