@@ -209,7 +209,7 @@
   /* ── Footer HTML ─────────────────────────────────────────────── */
   // Pipeline metadata: color, label, CSS class, spark color class
   const PIPELINES = {
-    'claude-ensemble': { color: '#4338ca', label: 'Full',   btnClass: 'btn-analyze--claude-ens', spark: 'btn-spark--indigo', dur: '~2min', swatchClass: 'menu-swatch--claude-ens' },
+    'claude-ensemble': { color: '#4338ca', label: 'Full', btnClass: 'btn-analyze--claude-ens', spark: 'btn-spark--indigo', dur: '~2min' },
   };
 
   function footerHtml(job) {
@@ -707,26 +707,6 @@
     document.getElementById('panel-reanalyze')?.addEventListener('click', () => {
       closePanel();
       analyzeJob(job, null, pipeline);
-    });
-
-    // Caret toggles dropdown
-    const caretBtn = document.getElementById('panel-rerun-caret');
-    const menu     = document.getElementById('panel-rerun-menu');
-    caretBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      menu?.classList.toggle('open');
-    });
-    // Close on outside click
-    document.addEventListener('click', () => menu?.classList.remove('open'), { once: true });
-
-    // Dropdown items
-    menu?.querySelectorAll('[data-rerun-mode]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const m = btn.dataset.rerunMode;
-        menu.classList.remove('open');
-        closePanel();
-        analyzeJob(job, null, m);
-      });
     });
 
     // Paste JD button

@@ -757,21 +757,6 @@ body {
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.pipeline-maverick {
-  background: #f0f9ff;
-  color: #0369a1;
-  border: 1px solid #bae6fd;
-}
-.pipeline-ensemble {
-  background: #f5f3ff;
-  color: #6d28d9;
-  border: 1px solid #ddd6fe;
-}
-.pipeline-claude {
-  background: #f0fdfa;
-  color: #0f766e;
-  border: 1px solid #99f6e4;
-}
 .pipeline-claude-ensemble {
   background: #eef2ff;
   color: #3730a3;
@@ -803,53 +788,7 @@ body {
   transition: filter .15s;
 }
 .panel-reanalyze-btn:hover { filter: brightness(1.1); }
-.panel-reanalyze--maverick       { background: #2563eb; border: 1px solid #1d4ed8; }
-.panel-reanalyze--ensemble       { background: #7c3aed; border: 1px solid #6d28d9; }
 .panel-reanalyze--claude-ensemble { background: #4338ca; border: 1px solid #3730a3; }
-.panel-reanalyze--codex          { background: #b45309; border: 1px solid #92400e; }
-.panel-reanalyze--codex-ens      { background: #7f1d1d; border: 1px solid #6b1a1a; }
-.panel-rerun-caret {
-  border-radius: 0 6px 6px 0;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  padding: 0 8px;
-  cursor: pointer;
-  color: var(--ink-2);
-  font-size: 11px;
-  display: inline-flex; align-items: center;
-  transition: background .15s;
-}
-.panel-rerun-caret:hover { background: var(--surface-2, #f3f4f6); }
-.panel-rerun-menu {
-  display: none;
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  min-width: 200px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,.12);
-  z-index: 100;
-  overflow: hidden;
-}
-.panel-rerun-menu.open { display: block; }
-.panel-rerun-menu button {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%; padding: 9px 14px;
-  background: none; border: none; cursor: pointer;
-  font-size: 12px; color: var(--ink); text-align: left;
-  transition: background .1s;
-}
-.panel-rerun-menu button:hover { background: var(--surface-2, #f3f4f6); }
-.panel-rerun-menu .menu-swatch {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-}
-.panel-rerun-menu .menu-swatch--maverick  { background: #2563eb; }
-.panel-rerun-menu .menu-swatch--ensemble  { background: #7c3aed; }
-.panel-rerun-menu .menu-swatch--claude-ens { background: #4338ca; }
-.panel-rerun-menu .menu-swatch--codex     { background: #b45309; }
-.panel-rerun-menu .menu-swatch--codex-ens { background: #7f1d1d; }
 
 /* panel pipeline placement */
 .panel-pipeline { display:flex; align-items:center; gap:8px; padding: 0 8px 6px 0; }
