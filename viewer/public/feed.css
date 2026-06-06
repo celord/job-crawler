@@ -212,13 +212,17 @@ body {
 .filter-input::placeholder { color: var(--muted-2); }
 
 
-/* My location + remote toggle */
-.filter-group--mylocation { display: flex; flex-direction: column; gap: 6px; }
+/* My location label row (label + inline remote toggle) */
+.filter-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
 .remote-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 5px;
+  font-size: 11px;
   color: var(--muted);
   cursor: pointer;
   user-select: none;
