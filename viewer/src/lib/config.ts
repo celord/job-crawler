@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import type { CartJobPayload } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,18 @@ export const SKIP_TIERS = new Set(
 );
 
 export const LOGO_CACHE_MAX = 2000;
+
+// Parse user location city from profile.yml without a YAML dependency
+export const USER_LOCATION = (() => {
+  try {
+    const root = CAREER_OPS_DIR.startsWith("/") ? CAREER_OPS_DIR : join(MATCHER_DIR, CAREER_OPS_DIR);
+    const text = readFileSync(join(root, "profile.yml"), "utf-8");
+    const m = text.match(/^\s*city:\s*["']?(.+?)["']?\s*$/m);
+    return m ? m[1]!.trim() : "";
+  } catch {
+    return "";
+  }
+})();
 
 // Global mutable state
 export const logoDevBrandCache = new Map<string, string | null>();

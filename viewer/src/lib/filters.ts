@@ -46,7 +46,8 @@ function isSimpleFtsQuery(tokens: TitleTokenGroup[]): boolean {
 export function addJobFilterConditions(
   filters: {
     title?: string | number | null;
-    location?: string | number | null;
+    myLocation?: string | number | null;
+    includeRemote?: boolean | null;
     company?: string | number | null;
     sources?: string | string[] | null;
     days?: string | number | null;
@@ -60,7 +61,8 @@ export function addJobFilterConditions(
   const conditions: string[] = [];
   const params: unknown[] = [];
   const title = String(filters.title ?? "");
-  const location = String(filters.location ?? "");
+  const myLocation = String(filters.myLocation ?? "").trim();
+  const includeRemote = filters.includeRemote !== false; // default true
   const company = String(filters.company ?? "");
   const days = String(filters.days ?? "");
   const sources = Array.isArray(filters.sources) ? filters.sources.join(",") : String(filters.sources ?? "");
@@ -96,19 +98,26 @@ export function addJobFilterConditions(
     }
   }
 
-  if (location.trim()) {
-    const locs = location.split(/[,]+/).map((l) => l.trim()).filter(Boolean);
-    if (locs.length === 1) {
-      // Single location term: use FTS5 on the location column
-      conditions.push(
-        `rowid IN (SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?)`,
-      );
-      params.push(`location:${ftsEscape(locs[0]!)}`);
+  // Location: match jobs near myLocation OR remote jobs (if includeRemote).
+  // If myLocation is empty and includeRemote is true → remote only.
+  // If myLocation is set and includeRemote is false → on-site/hybrid near myLocation only.
+  if (myLocation || !includeRemote) {
+    const locTerms = myLocation ? myLocation.split(/[,]+/).map((l) => l.trim()).filter(Boolean) : [];
+    const locClauses = locTerms.map(() => "LOWER(location) LIKE ?");
+    if (includeRemote) {
+      // (location matches myLocation) OR is_remote
+      const parts = [...locClauses, "is_remote = 1"];
+      conditions.push(`(${parts.join(" OR ")})`);
+      for (const l of locTerms) params.push(`%${l.toLowerCase()}%`);
     } else {
-      // Multiple location terms: fall back to LIKE OR
-      const locClauses = locs.map(() => "LOWER(location) LIKE ?");
-      conditions.push(`(${locClauses.join(" OR ")})`);
-      for (const loc of locs) params.push(`%${loc.toLowerCase()}%`);
+      // location matches myLocation only (no remote)
+      if (locClauses.length > 0) {
+        conditions.push(`(${locClauses.join(" OR ")})`);
+        for (const l of locTerms) params.push(`%${l.toLowerCase()}%`);
+      } else {
+        // remote unchecked and no location typed → show nothing (impossible filter, return empty)
+        conditions.push("1 = 0");
+      }
     }
   }
 

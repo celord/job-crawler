@@ -86,9 +86,13 @@
           <button type="button" class="keyword-clear" id="filter-exclude-clear" aria-label="Clear">×</button>
         </div>
       </div>
-      <div class="filter-group">
-        <label class="filter-label" for="filter-location">Location</label>
-        <input id="filter-location" class="filter-input" type="text" placeholder="Paris, Remote" autocomplete="off" />
+      <div class="filter-group filter-group--mylocation">
+        <label class="filter-label" for="filter-mylocation">My location</label>
+        <input id="filter-mylocation" class="filter-input" type="text" placeholder="Miami, FL" autocomplete="off" />
+        <label class="remote-toggle">
+          <input type="checkbox" id="filter-remote" checked />
+          <span>Include remote</span>
+        </label>
       </div>
       <div class="filter-group">
         <label class="filter-label" for="filter-company">Company</label>

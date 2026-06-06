@@ -68,6 +68,18 @@ db.exec(`
   WHERE employment_type_canonical IS NULL AND employment_type IS NOT NULL
 `);
 
+// Add is_remote column and backfill from location text (idempotent)
+try {
+  db.exec(`ALTER TABLE catalog_jobs ADD COLUMN is_remote INTEGER NOT NULL DEFAULT 0`);
+} catch {
+  // column already exists
+}
+db.exec(`
+  UPDATE catalog_jobs SET is_remote = 1
+  WHERE is_remote = 0
+    AND (LOWER(location) LIKE '%remote%' OR LOWER(location) LIKE '%anywhere%')
+`);
+
 // FTS5 virtual table for fast title + location search
 db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS catalog_jobs_fts USING fts5(

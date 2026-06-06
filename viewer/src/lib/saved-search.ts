@@ -63,7 +63,8 @@ export async function findNextSavedSearchJob(): Promise<{ job: JobRow; search: S
   for (const search of searches) {
     const { conditions, params } = addJobFilterConditions({
       title: search.title,
-      location: search.location,
+      myLocation: search.location,
+      includeRemote: true,
       company: search.company,
       sources: search.sources,
       days: search.days,

@@ -22,6 +22,7 @@ import {
   savedSearchAnalyzerPaused,
   savedSearchAnalyzerCurrent,
   setSavedSearchAnalyzerPaused,
+  USER_LOCATION,
 } from "./lib/config.js";
 import { db, selectJobStatement, jobCacheKey, sanitizeJob } from "./lib/db.js";
 import { addJobFilterConditions } from "./lib/filters.js";
@@ -55,7 +56,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.static(join(__dirname, "../public")));
 
 app.get("/api/jobs", async (req, res) => {
-  const { title, location, days, company, sources, page, limit, favCompanies, evaluated, score, inc, exc, tiers, types } = req.query as Record<string, string>;
+  const { title, myLoc, remote, days, company, sources, page, limit, favCompanies, evaluated, score, inc, exc, tiers, types } = req.query as Record<string, string>;
 
   const pageNum = Math.max(1, parseInt(page ?? "1", 10));
   const pageSize = Math.min(500, Math.max(1, parseInt(limit ?? "50", 10)));
@@ -65,8 +66,9 @@ app.get("/api/jobs", async (req, res) => {
   const evaluatedOnly = evaluated === "1";
 
   const favList = favCompanies ? favCompanies.split(",").map((s) => s.trim()).filter(Boolean) : null;
+  const includeRemote = remote !== "0"; // default true; pass remote=0 to exclude
 
-  const { conditions, params } = addJobFilterConditions({ title, location, company, sources, days, favCompanies: favList, include: inc, exclude: exc, tiers, types });
+  const { conditions, params } = addJobFilterConditions({ title, myLocation: myLoc, includeRemote, company, sources, days, favCompanies: favList, include: inc, exclude: exc, tiers, types });
 
   if (evaluatedOnly) {
     conditions.push("analysis_score IS NOT NULL AND analysis_score > 0");
@@ -205,6 +207,7 @@ app.get("/api/config", (_req, res) => {
     matcherEnabled: true,
     ensemble: { scorers, synthesizer },
     scoreNotifyMinScore: SCORE_NOTIFY_MIN_SCORE,
+    userLocation: USER_LOCATION || null,
   });
 });
 

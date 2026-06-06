@@ -1312,12 +1312,14 @@
   function pushUrlState(page) {
     const p = new URLSearchParams();
     const title   = document.getElementById('filter-title').value.trim();
-    const loc     = document.getElementById('filter-location').value.trim();
+    const myLoc   = document.getElementById('filter-mylocation').value.trim();
+    const remote  = document.getElementById('filter-remote').checked;
     const company = document.getElementById('filter-company').value.trim();
     const days    = document.getElementById('filter-days').value.trim();
     const sources = getSelectedProviders();
     if (title)                    p.set('title', title);
-    if (loc)                      p.set('loc', loc);
+    if (myLoc)                    p.set('myLoc', myLoc);
+    if (!remote)                  p.set('remote', '0');
     if (company)                  p.set('company', company);
     if (days)                     p.set('days', days);
     if (sources.length)           p.set('sources', sources.join(','));
@@ -1331,7 +1333,8 @@
   function restoreFromUrl() {
     const p = new URLSearchParams(location.search);
     if (p.has('title'))    document.getElementById('filter-title').value    = p.get('title');
-    if (p.has('loc'))      document.getElementById('filter-location').value = p.get('loc');
+    if (p.has('myLoc'))    document.getElementById('filter-mylocation').value = p.get('myLoc');
+    if (p.has('remote'))   document.getElementById('filter-remote').checked = p.get('remote') !== '0';
     if (p.has('company'))  document.getElementById('filter-company').value  = p.get('company');
     if (p.has('days'))     document.getElementById('filter-days').value     = p.get('days');
     // sources: deferred to loadSources() since checkboxes don't exist yet at boot
@@ -1347,9 +1350,10 @@
   }
 
   function applySearchLock(locked) {
-    ['filter-title','filter-location','filter-company','filter-days'].forEach(id => {
+    ['filter-title','filter-mylocation','filter-company','filter-days'].forEach(id => {
       document.getElementById(id).disabled = locked;
     });
+    document.getElementById('filter-remote').disabled = locked;
     document.querySelector('.provider-btn')?.toggleAttribute('disabled', locked);
   }
 
@@ -1389,8 +1393,8 @@
           // Single search — fill inputs from saved search, but preserve user-typed values
           const single = savedSearches.find(x => activeSearchIds.has(searchId(x.id)));
           if (single) {
-            if (single.title    != null) document.getElementById('filter-title').value    = single.title;
-            if (single.location != null) document.getElementById('filter-location').value = single.location;
+            if (single.title    != null) document.getElementById('filter-title').value       = single.title;
+            if (single.location != null) document.getElementById('filter-mylocation').value = single.location;
             if (single.company)          document.getElementById('filter-company').value  = single.company;
             if (single.days     != null) document.getElementById('filter-days').value     = single.days;
             setSelectedProviders(single.sources || []);
@@ -1416,9 +1420,10 @@
       fetchJobs(1, fetchJobsController.signal);
     }, 250);
   }
-  ['filter-title','filter-location','filter-company','filter-days'].forEach(id => {
+  ['filter-title','filter-mylocation','filter-company','filter-days'].forEach(id => {
     document.getElementById(id).addEventListener('input', onFilterChange);
   });
+  document.getElementById('filter-remote').addEventListener('change', onFilterChange);
 
   /* tier filter */
   function getSelectedTiers() {
@@ -1520,7 +1525,8 @@
   function buildSearchParams(overrides = {}) {
     const p = new URLSearchParams();
     const title   = overrides.title   ?? document.getElementById('filter-title').value.trim();
-    const loc     = overrides.loc     ?? document.getElementById('filter-location').value.trim();
+    const myLoc   = overrides.myLoc   ?? document.getElementById('filter-mylocation').value.trim();
+    const remote  = overrides.remote  ?? document.getElementById('filter-remote').checked;
     const company = overrides.company ?? document.getElementById('filter-company').value.trim();
     const days    = overrides.days    ?? document.getElementById('filter-days').value.trim();
     const sources = overrides.sources ?? getSelectedProviders();
@@ -1529,7 +1535,8 @@
     const tiers   = overrides.tiers   ?? getSelectedTiers();
     const types   = overrides.types   ?? getSelectedTypes();
     if (title)          p.set('title', title);
-    if (loc)            p.set('location', loc);
+    if (myLoc)          p.set('myLoc', myLoc);
+    if (!remote)        p.set('remote', '0');
     if (company)        p.set('company', company);
     if (days)           p.set('days', days);
     if (sources.length) p.set('sources', sources.join(','));
@@ -1570,7 +1577,7 @@
         // Multi-search: fetch each selected search in parallel, dedupe by jobKey
         const responses = await Promise.all(active.map(s => {
           const p = buildSearchParams({
-            title: s.title ?? '', loc: s.location ?? '',
+            title: s.title ?? '', myLoc: s.location ?? '', remote: true,
             company: s.company ?? '', days: s.days ?? '',
             sources: s.sources || [],
           });
@@ -1648,6 +1655,10 @@
       matcherEnabled        = Boolean(data.matcherEnabled);
       if (data.ensemble) ensembleConfig = data.ensemble;
       if (typeof data.scoreNotifyMinScore === 'number') scoreNotifyMinScore = data.scoreNotifyMinScore;
+      // Pre-fill My location from profile if not already set by URL state
+      if (data.userLocation && !document.getElementById('filter-mylocation').value) {
+        document.getElementById('filter-mylocation').value = data.userLocation;
+      }
       renderCurrentView();
     } catch {}
   }
