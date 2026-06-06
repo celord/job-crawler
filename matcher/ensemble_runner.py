@@ -534,6 +534,9 @@ def _process_one_job(idx, line, profile_text, profile_data, pipeline_tag, cache_
             **({"jd_parse_error": jd_parse_error} if jd_parse_error else {}),
         }
         analysis = apply_match_guardrails(analysis, match_context)
+        comp = job.get("compensation")
+        if isinstance(comp, dict) and (comp.get("min") or comp.get("max")):
+            analysis["compensation"] = comp
         score_100 = analysis["score"]
         verdict = analysis["verdict"]
         row = {

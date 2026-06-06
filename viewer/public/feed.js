@@ -810,9 +810,12 @@
     })();
     const rs = firstAnalysis?.role_summary || {};
     const pillValues = [rs.domain, rs.seniority, rs.remote_policy].filter(Boolean);
-    document.getElementById('panel-pills').innerHTML = pillValues.length
-      ? pillValues.map(v => `<span class="panel-pill">${esc(v)}</span>`).join('')
-      : '';
+    const compLabel = formatCompensation(firstAnalysis?.compensation);
+    const pillsHtml = [
+      ...pillValues.map(v => `<span class="panel-pill">${esc(v)}</span>`),
+      compLabel ? `<span class="panel-pill panel-pill--salary">💰 ${esc(compLabel)}</span>` : '',
+    ].filter(Boolean).join('');
+    document.getElementById('panel-pills').innerHTML = pillsHtml;
 
     renderPanelBody(job, tag);
 
@@ -1758,6 +1761,20 @@
     return prefix + unique.slice(0, 2).join(' - '); // Show min and max
   }
 
+  // Format compensation for display. Accepts dict {min, max} (new parser) or string (legacy/fallback).
+  function formatCompensation(comp) {
+    if (!comp) return null;
+    if (typeof comp === 'object') {
+      const { min, max } = comp;
+      if (!min && !max) return null;
+      const fmt = v => v >= 1000 ? `$${Math.round(v / 1000)}k` : `$${v}`;
+      return max ? `${fmt(min)}–${fmt(max)}` : `${fmt(min)}/yr`;
+    }
+    // Legacy string — use old extraction
+    const salaryRange = extractSalaryRange(isRealCompensation(comp) ? comp : null);
+    return salaryRange || (isRealCompensation(comp) ? comp : null);
+  }
+
   function renderJdData(data) {
     const field = (label, value) => {
       if (value == null || value === '') return '';
@@ -1772,17 +1789,15 @@
       return `<div class="jd-field"><div class="jd-field-label">${esc(label)}</div><div class="jd-chips">${items.map(i => `<span class="jd-chip">${esc(String(i))}</span>`).join('')}</div></div>`;
     };
     
-    // Extract clean salary range for compensation field
-    const cleanCompensation = isRealCompensation(data.compensation) ? data.compensation : null;
-    const salaryRange = extractSalaryRange(cleanCompensation);
-    
+    const compDisplay = formatCompensation(data.compensation);
+
     return [
       field('Title', data.title),
       field('Provider', data.provider),
       field('Location', data.location),
       field('Workplace type', data.workplace_type),
       field('Employment type', data.employment_type),
-      salaryRange ? field('Compensation', salaryRange) : field('Compensation', cleanCompensation),
+      field('Compensation', compDisplay),
       field('Posted', data.posted_datetime),
       chips('JD concepts', data.jd_concepts),
       list('Responsibilities', data.responsibilities),

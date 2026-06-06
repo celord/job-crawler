@@ -272,15 +272,95 @@ def infer_employment_type(*values):
     return None
 
 
-def infer_compensation(explicit, text):
-    if explicit:
-        return explicit
+_FX = {"EUR": 1.08, "GBP": 1.27, "CAD": 0.74, "AUD": 0.65, "USD": 1.0,
+       "€": 1.08, "£": 1.27, "$": 1.0}
 
-    for line in html_to_lines(text):
-        # Only match lines with a real salary figure: $120,000 / €90 000 / £80k–£100k style
-        if re.search(r"[$€£]\s?\d{2,3}[,\s]?\d{3}", line) or re.search(r"[$€£]\s?\d{2,3}[kK]\b", line):
-            return line
-    return None
+def _parse_amount(s: str) -> float | None:
+    """Parse a numeric string with optional K/M suffix and EU-style thousands (130.000)."""
+    s = s.strip().replace(",", "").replace(" ", "")
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*([kKmM]?)$", s)
+    if not m:
+        return None
+    val = float(m.group(1))
+    suffix = m.group(2).upper()
+    # EU thousands: 130.000 — detect by presence of exactly 3 decimals in original
+    if "." in s and suffix == "" and re.search(r"\.\d{3}$", s):
+        val = float(s.replace(".", ""))
+    elif suffix == "K":
+        val *= 1_000
+    elif suffix == "M":
+        val *= 1_000_000
+    return val
+
+
+def _detect_currency(text: str) -> str:
+    for sym in ("GBP", "£", "EUR", "€", "CAD", "AUD", "USD", "$"):
+        if sym in text:
+            return sym
+    return "$"
+
+
+_SALARY_RE = re.compile(
+    r"(?:[$€£]|USD|EUR|GBP|CAD|AUD)\s?"    # currency symbol/code
+    r"(\d[\d,. ]*\d|\d+)"                   # first number
+    r"\s*[kKmM]?"                            # optional K/M
+    r"(?:"
+      r"\s*(?:–|-|to|and)\s*"               # range separator
+      r"(?:[$€£]|USD|EUR|GBP|CAD|AUD)?\s?" # optional repeated currency
+      r"(\d[\d,. ]*\d|\d+)\s*[kKmM]?"      # second number
+    r")?",
+    re.IGNORECASE
+)
+
+_NUM_PART = re.compile(r"(\d[\d,. ]*(?:\.\d+)?)\s*([kKmM]?)", re.IGNORECASE)
+
+
+def infer_compensation(explicit, text):
+    """Return {"min": int|null, "max": int|null} from an explicit value or JD text."""
+    null_result = {"min": None, "max": None}
+
+    candidate = explicit or ""
+    if not candidate and text:
+        # Find first line that looks like it contains a salary figure
+        for line in html_to_lines(text):
+            if re.search(
+                r"([$€£]|USD|EUR|GBP|CAD|AUD)\s?\d{2,3}|"
+                r"\b\d{2,3}[kK]\b|\b\d{2,3}[,. ]\d{3}",
+                line, re.IGNORECASE
+            ):
+                candidate = line
+                break
+
+    if not candidate:
+        return null_result
+
+    currency = _detect_currency(candidate.upper())
+    fx = _FX.get(currency, 1.0)
+
+    # Detect multiplier (hourly → ×2080, monthly → ×12)
+    multiplier = 1
+    if re.search(r"/\s*h(r|our)?|per\s+hour", candidate, re.IGNORECASE):
+        multiplier = 2080
+    elif re.search(r"/\s*month|per\s+month", candidate, re.IGNORECASE):
+        multiplier = 12
+
+    # Extract up to two numeric tokens from candidate
+    # Strip currency symbols/codes to get clean numbers
+    clean = re.sub(r"(USD|EUR|GBP|CAD|AUD|[$€£])", "", candidate, flags=re.IGNORECASE)
+    nums = _NUM_PART.findall(clean)
+    values = []
+    for num_str, suffix in nums:
+        parsed = _parse_amount(num_str + suffix)
+        if parsed is not None and parsed >= 10:  # ignore single/double digit noise
+            values.append(int(round(parsed * fx * multiplier)))
+
+    # Keep only salary-range values (>= 10k after multiplier, or hourly >= 10)
+    plausible = [v for v in values if v >= (10_000 if multiplier == 1 else 10)]
+    if not plausible:
+        return null_result
+
+    plausible = sorted(set(plausible))
+    return {"min": plausible[0], "max": plausible[1] if len(plausible) > 1 else None}
 
 
 def to_iso_datetime(value):
@@ -342,7 +422,6 @@ def build_result(url, provider, title, posted_datetime, location, compensation, 
         "technical_tools_mentioned": extract_tools("\n".join([
             str(title or ""),
             str(location or ""),
-            str(compensation or ""),
             str(concept_text or ""),
             "\n".join(responsibilities),
             "\n".join(requirements_summary),
@@ -550,7 +629,7 @@ def parse_bamboohr(url):
         title=job.get("jobOpeningName"),
         posted_datetime=job.get("datePosted"),
         location=location,
-        compensation=job.get("compensation"),
+        compensation=infer_compensation(job.get("compensation"), description),
         workplace_type=infer_workplace_type(location, description),
         employment_type=infer_employment_type(job.get("employmentStatusLabel"), description),
         responsibilities=bulletize(select_section(sections, RESPONSIBILITY_KEYWORDS)),
@@ -651,19 +730,28 @@ def extract_ld_json_location(jobposting):
 
 
 def extract_ld_json_compensation(jobposting):
+    """Extract baseSalary from JSON-LD and return {"min": int|null, "max": int|null} or None."""
     salary = jobposting.get("baseSalary") or jobposting.get("estimatedSalary")
     if not isinstance(salary, dict):
         return None
-    currency = salary.get("currency")
+    currency = (salary.get("currency") or "USD").upper()
+    fx = _FX.get(currency, 1.0)
     value = salary.get("value")
+    unit = ""
     if isinstance(value, dict):
-        min_value = value.get("minValue")
-        max_value = value.get("maxValue")
-        unit = value.get("unitText")
-        if min_value or max_value:
-            bounds = f"{min_value} - {max_value}" if min_value and max_value else str(min_value or max_value)
-            return " ".join(part for part in (str(currency) if currency else None, bounds, str(unit) if unit else None) if part)
-    return None
+        unit = str(value.get("unitText") or "")
+        min_val = value.get("minValue")
+        max_val = value.get("maxValue")
+    elif isinstance(value, (int, float)):
+        min_val, max_val = value, None
+    else:
+        return None
+    if not min_val and not max_val:
+        return None
+    multiplier = 2080 if "HOUR" in unit.upper() else 12 if "MONTH" in unit.upper() else 1
+    def to_int(v):
+        return int(round(float(v) * fx * multiplier)) if v is not None else None
+    return {"min": to_int(min_val), "max": to_int(max_val)}
 
 
 def to_jsonld(record: dict, target_role: str = "") -> str:
@@ -694,8 +782,12 @@ def to_jsonld(record: dict, target_role: str = "") -> str:
         obj["occupationalCategory"] = target_role
     if record.get("employment_type"):
         obj["employmentType"] = record["employment_type"]
-    if record.get("compensation"):
-        obj["baseSalary"] = record["compensation"]
+    comp = record.get("compensation")
+    if isinstance(comp, dict) and (comp.get("min") or comp.get("max")):
+        parts = [f"${v // 1000}k" for v in (comp.get("min"), comp.get("max")) if v]
+        obj["baseSalary"] = "–".join(parts)
+    elif isinstance(comp, str) and comp:
+        obj["baseSalary"] = comp
     if description:
         obj["description"] = description
     combined_skills = list(dict.fromkeys(skills + tools))

@@ -31,7 +31,6 @@ except ImportError:  # pragma: no cover - package import path
         format_match_context,
     )
     from .job_post_parser import to_jsonld
-    )
 
 # ============ CONFIGURATION ============
 DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -1060,6 +1059,9 @@ def process_batch(input_file, output_file, system_prompt, api_key, model, dry_ru
                 f"score={analysis.get('score', 0)} verdict={analysis.get('verdict', 'n/a')}"
             )
 
+            comp = record.get("compensation")
+            if isinstance(comp, dict) and (comp.get("min") or comp.get("max")):
+                analysis["compensation"] = comp
             output_row = {
                 "line_number": line_number,
                 "status": status,
