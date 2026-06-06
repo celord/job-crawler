@@ -1354,7 +1354,7 @@
       document.getElementById(id).disabled = locked;
     });
     document.getElementById('filter-remote').disabled = locked;
-    document.querySelector('.provider-btn')?.toggleAttribute('disabled', locked);
+    ['provider-btn', 'tier-btn', 'type-btn'].forEach(id => document.getElementById(id)?.toggleAttribute('disabled', locked));
   }
 
   async function loadSavedSearches() {
@@ -1425,21 +1425,37 @@
   });
   document.getElementById('filter-remote').addEventListener('change', onFilterChange);
 
-  /* tier filter */
+  /* tier filter — dropdown */
+  const tierBtn  = document.getElementById('tier-btn');
+  const tierMenu = document.getElementById('tier-menu');
+  tierBtn.addEventListener('click', e => { e.stopPropagation(); tierMenu.classList.toggle('open'); });
+  document.addEventListener('click', () => tierMenu.classList.remove('open'));
+  tierMenu.addEventListener('click', e => e.stopPropagation());
   function getSelectedTiers() {
-    return [...document.querySelectorAll('input[name="tier"]:checked')].map(i => i.value);
+    return [...tierMenu.querySelectorAll('input[type="checkbox"]:checked')].map(i => i.value);
   }
-  document.querySelectorAll('input[name="tier"]').forEach(cb => {
-    cb.addEventListener('change', onFilterChange);
-  });
+  function syncTierLabel() {
+    const sel = getSelectedTiers();
+    const allLabels = ['Intern', 'Entry', 'Mid', 'Senior'];
+    tierBtn.childNodes[0].textContent = sel.length === 0 ? 'All levels' : sel.length === allLabels.length ? 'All levels' : sel.map(v => v.charAt(0).toUpperCase() + v.slice(1)).join(', ');
+  }
+  tierMenu.addEventListener('change', () => { syncTierLabel(); onFilterChange(); });
 
-  /* employment type filter */
+  /* employment type filter — dropdown */
+  const typeBtn  = document.getElementById('type-btn');
+  const typeMenu = document.getElementById('type-menu');
+  typeBtn.addEventListener('click', e => { e.stopPropagation(); typeMenu.classList.toggle('open'); });
+  document.addEventListener('click', () => typeMenu.classList.remove('open'));
+  typeMenu.addEventListener('click', e => e.stopPropagation());
   function getSelectedTypes() {
-    return [...document.querySelectorAll('input[name="emptype"]:checked')].map(i => i.value);
+    return [...typeMenu.querySelectorAll('input[type="checkbox"]:checked')].map(i => i.value);
   }
-  document.querySelectorAll('input[name="emptype"]').forEach(cb => {
-    cb.addEventListener('change', onFilterChange);
-  });
+  function syncTypeLabel() {
+    const sel = getSelectedTypes();
+    const total = typeMenu.querySelectorAll('input[type="checkbox"]').length;
+    typeBtn.childNodes[0].textContent = sel.length === 0 ? 'All types' : sel.length === total ? 'All types' : sel.join(', ');
+  }
+  typeMenu.addEventListener('change', () => { syncTypeLabel(); onFilterChange(); });
 
   /* keyword filters — server-side via onFilterChange */
   function syncKeywordClearButtons() {

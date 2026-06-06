@@ -119,21 +119,27 @@
       </div>
       <div class="filter-group filter-group--tiers">
         <label class="filter-label">Level</label>
-        <div class="tier-checkboxes">
-          <label class="tier-check"><input type="checkbox" name="tier" value="intern" /><span>Intern</span></label>
-          <label class="tier-check"><input type="checkbox" name="tier" value="entry" /><span>Entry</span></label>
-          <label class="tier-check"><input type="checkbox" name="tier" value="mid" checked /><span>Mid</span></label>
-          <label class="tier-check"><input type="checkbox" name="tier" value="senior" checked /><span>Senior</span></label>
+        <div class="provider-dropdown" id="tier-dropdown">
+          <button type="button" class="provider-btn" id="tier-btn">Mid, Senior</button>
+          <div class="provider-menu" id="tier-menu">
+            <label class="provider-item"><input type="checkbox" name="tier" value="intern" /><span>Intern</span></label>
+            <label class="provider-item"><input type="checkbox" name="tier" value="entry" /><span>Entry</span></label>
+            <label class="provider-item"><input type="checkbox" name="tier" value="mid" checked /><span>Mid</span></label>
+            <label class="provider-item"><input type="checkbox" name="tier" value="senior" checked /><span>Senior</span></label>
+          </div>
         </div>
       </div>
       <div class="filter-group filter-group--types">
         <label class="filter-label">Type</label>
-        <div class="tier-checkboxes">
-          <label class="tier-check"><input type="checkbox" name="emptype" value="Full-time" checked /><span>Full-time</span></label>
-          <label class="tier-check"><input type="checkbox" name="emptype" value="Contract" checked /><span>Contract</span></label>
-          <label class="tier-check"><input type="checkbox" name="emptype" value="Part-time" /><span>Part-time</span></label>
-          <label class="tier-check"><input type="checkbox" name="emptype" value="Temporary" /><span>Temp</span></label>
-          <label class="tier-check"><input type="checkbox" name="emptype" value="Internship" /><span>Internship</span></label>
+        <div class="provider-dropdown" id="type-dropdown">
+          <button type="button" class="provider-btn" id="type-btn">Full-time, Contract</button>
+          <div class="provider-menu" id="type-menu">
+            <label class="provider-item"><input type="checkbox" name="emptype" value="Full-time" checked /><span>Full-time</span></label>
+            <label class="provider-item"><input type="checkbox" name="emptype" value="Contract" checked /><span>Contract</span></label>
+            <label class="provider-item"><input type="checkbox" name="emptype" value="Part-time" /><span>Part-time</span></label>
+            <label class="provider-item"><input type="checkbox" name="emptype" value="Temporary" /><span>Temp</span></label>
+            <label class="provider-item"><input type="checkbox" name="emptype" value="Internship" /><span>Internship</span></label>
+          </div>
         </div>
       </div>
     </div>
