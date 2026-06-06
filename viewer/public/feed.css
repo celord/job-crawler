@@ -236,7 +236,6 @@ body {
   user-select: none;
 }
 .tier-check input { display: none; }
-.tier-check--checked,
 .tier-check:has(input:checked) {
   border-color: var(--accent);
   color: var(--accent);
