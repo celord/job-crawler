@@ -51,7 +51,7 @@ def chat_completions_url():
 CHAT_COMPLETIONS_URL = chat_completions_url()
 DEFAULT_SCORERS = [
     "meta/llama-4-maverick-17b-128e-instruct",
-    "moonshotai/kimi-k2-instruct",
+    "moonshotai/kimi-k2.6",
     "nvidia/llama-3.3-nemotron-super-49b-v1.5",
 ]
 DEFAULT_SYNTHESIZER = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
