@@ -15,6 +15,7 @@ try:
         build_profile_text,
         format_match_context,
     )
+    from job_post_parser import to_jsonld
 except ImportError:  # pragma: no cover - package import path
     from .matching_intelligence import (
         build_match_context,
@@ -22,11 +23,23 @@ except ImportError:  # pragma: no cover - package import path
         build_profile_text,
         format_match_context,
     )
+    from .job_post_parser import to_jsonld
 
 BASE_DIR = Path(__file__).parent
 DEFAULT_PROFILE_DIR = "career-ops"
+USE_JSONLD_INPUT = os.environ.get("USE_JSONLD_INPUT", "").lower() in ("1", "true", "yes")
 
 API_KEY = os.environ.get("NVIDIA_API_KEY", "").strip()
+
+
+def _first_target_role(profile_data: dict) -> str:
+    """Extract the first primary target role from profile.yml text (no YAML dep)."""
+    text = (profile_data or {}).get("profile.yml", "")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- ") and stripped[2:].strip().startswith('"'):
+            return stripped[2:].strip().strip('"')
+    return ""
 DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 
@@ -478,14 +491,17 @@ def _process_one_job(idx, line, profile_text, profile_data, pipeline_tag, cache_
     job_id = job.get("job_id", "?")
     title = job.get("title", "?")
     job_label = f"#{i} {source_key} | {title}"
-    jd_text = job.get("jd_text", "").strip()
     jd_parse_error = job.get("parse_error") or None
+    if USE_JSONLD_INPUT:
+        jd_text = to_jsonld(job, _first_target_role(profile_data))
+    else:
+        jd_text = job.get("jd_text", "").strip()
 
     if not jd_text:
         log(f"[ensemble-batch] {job_label} | empty jd_text")
         return idx, None, "empty"
 
-    log(f"[ensemble-batch] {job_label} | start | jd_chars={len(jd_text)}")
+    log(f"[ensemble-batch] {job_label} | start | jd_chars={len(jd_text)} jsonld={USE_JSONLD_INPUT}")
     t0 = time.time()
     try:
         synthesis, match_context = ensemble_analyze(

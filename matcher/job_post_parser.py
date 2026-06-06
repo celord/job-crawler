@@ -666,6 +666,44 @@ def extract_ld_json_compensation(jobposting):
     return None
 
 
+def to_jsonld(record: dict, target_role: str = "") -> str:
+    """Serialize a parsed job record to a compact schema.org/JobPosting JSON-LD string."""
+    requirements = record.get("must_have_requirements") or record.get("requirements_summary") or []
+    nice_to_have = record.get("nice_to_have_requirements") or []
+    skills = requirements + nice_to_have
+    tools = record.get("technical_tools_mentioned") or []
+
+    description = record.get("jd_text") or ""
+    if not description:
+        parts = []
+        if record.get("responsibilities"):
+            parts.append("Responsibilities: " + "; ".join(record["responsibilities"]))
+        if requirements:
+            parts.append("Requirements: " + "; ".join(requirements))
+        description = " | ".join(parts)
+    description = description[:1000]
+
+    obj = {"@context": "https://schema.org", "@type": "JobPosting"}
+    if record.get("title"):
+        obj["title"] = record["title"]
+    if record.get("company"):
+        obj["hiringOrganization"] = {"@type": "Organization", "name": record["company"]}
+    if record.get("location"):
+        obj["jobLocation"] = {"@type": "Place", "address": record["location"]}
+    if target_role:
+        obj["occupationalCategory"] = target_role
+    if record.get("employment_type"):
+        obj["employmentType"] = record["employment_type"]
+    if record.get("compensation"):
+        obj["baseSalary"] = record["compensation"]
+    if description:
+        obj["description"] = description
+    combined_skills = list(dict.fromkeys(skills + tools))
+    if combined_skills:
+        obj["skills"] = combined_skills[:30]
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
 def parse_url(url):
     try:
         provider = detect_provider(url)

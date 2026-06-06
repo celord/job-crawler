@@ -22,12 +22,15 @@ try:
         build_profile_text,
         format_match_context,
     )
+    from job_post_parser import to_jsonld
 except ImportError:  # pragma: no cover - package import path
     from .matching_intelligence import (
         build_match_context,
         build_match_context_from_profile_data,
         build_profile_text,
         format_match_context,
+    )
+    from .job_post_parser import to_jsonld
     )
 
 # ============ CONFIGURATION ============
@@ -90,6 +93,16 @@ def chat_completions_url():
 
 
 NVIDIA_CHAT_COMPLETIONS_URL = chat_completions_url()
+USE_JSONLD_INPUT = os.environ.get("USE_JSONLD_INPUT", "").lower() in ("1", "true", "yes")
+
+
+def _first_target_role(profile_yml_text: str) -> str:
+    """Extract the first primary target role from profile.yml text (no YAML dep)."""
+    for line in profile_yml_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- ") and stripped[2:].strip().startswith('"'):
+            return stripped[2:].strip().strip('"')
+    return ""
 
 
 # ============ CHARGEMENT DES FICHIERS PROFIL ============
@@ -982,7 +995,7 @@ def synthesize_jd_text(record):
     return "\n\n".join(section for section in sections if section.strip())
 
 
-def process_batch(input_file, output_file, system_prompt, api_key, model, dry_run=False, profile_text="", pipeline_tag="maverick"):
+def process_batch(input_file, output_file, system_prompt, api_key, model, dry_run=False, profile_text="", pipeline_tag="maverick", profile_data=None):
     """Processes a JSONL file of structured job postings and writes a JSONL of results."""
     total = 0
     succeeded = 0
@@ -1012,8 +1025,12 @@ def process_batch(input_file, output_file, system_prompt, api_key, model, dry_ru
 
             job_label = format_job_label(record, line_number=line_number)
             jd_parse_error = record.get("parse_error") or None
-            jd_text = synthesize_jd_text(record)
-            log_progress(f"[batch] {job_label} | start processing | jd_chars={len(jd_text)}")
+            if USE_JSONLD_INPUT:
+                target_role = _first_target_role((profile_data or {}).get("profile.yml", ""))
+                jd_text = to_jsonld(record, target_role)
+            else:
+                jd_text = synthesize_jd_text(record)
+            log_progress(f"[batch] {job_label} | start processing | jd_chars={len(jd_text)} jsonld={USE_JSONLD_INPUT}")
             if not jd_text.strip():
                 analysis = {"score": 0, "error": "empty_job_description"}
                 log_progress(f"[batch] {job_label} | empty job description")
@@ -1110,7 +1127,7 @@ def main():
     if args.jobs_jsonl:
         print(f"📚 Batch analysis: {args.jobs_jsonl}")
         print(f"🧠 NVIDIA model: {args.model}")
-        summary = process_batch(args.jobs_jsonl, args.results_jsonl, system_prompt, api_key, args.model, dry_run=args.dry_run, profile_text=profile_text, pipeline_tag=args.pipeline)
+        summary = process_batch(args.jobs_jsonl, args.results_jsonl, system_prompt, api_key, args.model, dry_run=args.dry_run, profile_text=profile_text, pipeline_tag=args.pipeline, profile_data=profile_data)
         print(json.dumps(summary, ensure_ascii=False))
         return
 
