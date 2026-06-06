@@ -90,7 +90,7 @@ app.get("/api/jobs", async (req, res) => {
     const jobs = db
       .prepare(
         `SELECT provider, source_key, job_id, title, location, employment_type,
-                compensation, department, job_url, updated_at, posted_at, first_seen_at, last_seen_at, skill_tier, employment_type_canonical
+                compensation, department, job_url, updated_at, posted_at, first_seen_at, last_seen_at, skill_tier, employment_type_canonical, lat, lon
          FROM catalog_jobs ${where}
          ORDER BY COALESCE(posted_at, first_seen_at) DESC
          LIMIT ? OFFSET ?`,

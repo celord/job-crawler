@@ -16,6 +16,7 @@ RUN apk add --no-cache python3 make g++ jq
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+COPY data ./data
 COPY post-crawl.sh /app/post-crawl.sh
 RUN chmod +x /app/post-crawl.sh
 RUN mkdir -p /app/output

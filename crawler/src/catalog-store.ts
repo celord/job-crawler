@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import Database from "better-sqlite3";
 import { NormalizedJob } from "./types.js";
 import { classifyTier, canonicalizeEmploymentType } from "./normalizers.js";
+import { resolveCoords } from "./geo.js";
 
 type CatalogRow = {
   provider: string;
@@ -72,6 +73,8 @@ export class CatalogStore {
     this.ensureColumn("catalog_jobs", "posted_at", "TEXT");
     this.ensureColumn("catalog_jobs", "skill_tier", "TEXT");
     this.ensureColumn("catalog_jobs", "employment_type_canonical", "TEXT");
+    this.ensureColumn("catalog_jobs", "lat", "REAL");
+    this.ensureColumn("catalog_jobs", "lon", "REAL");
 
     this.upsertOne = this.db.prepare(`
       INSERT INTO catalog_jobs (
@@ -94,7 +97,9 @@ export class CatalogStore {
         seen_run_id,
         raw_json,
         skill_tier,
-        employment_type_canonical
+        employment_type_canonical,
+        lat,
+        lon
       ) VALUES (
         @provider,
         @source_key,
@@ -115,7 +120,9 @@ export class CatalogStore {
         @seen_run_id,
         @raw_json,
         @skill_tier,
-        @employment_type_canonical
+        @employment_type_canonical,
+        @lat,
+        @lon
       )
       ON CONFLICT(provider, source_key, job_id) DO UPDATE SET
         title = excluded.title,
@@ -132,7 +139,9 @@ export class CatalogStore {
         last_seen_at = excluded.last_seen_at,
         seen_run_id = excluded.seen_run_id,
         skill_tier = excluded.skill_tier,
-        employment_type_canonical = excluded.employment_type_canonical
+        employment_type_canonical = excluded.employment_type_canonical,
+        lat = excluded.lat,
+        lon = excluded.lon
     `);
     this.insertMany = this.db.transaction((rows: NormalizedJob[], runId: string) => {
       const now = new Date().toISOString();
@@ -157,7 +166,8 @@ export class CatalogStore {
           seen_run_id: runId,
           raw_json: "null",
           skill_tier: job.skill_tier ?? classifyTier(job.title),
-          employment_type_canonical: canonicalizeEmploymentType(job.employment_type)
+          employment_type_canonical: canonicalizeEmploymentType(job.employment_type),
+          ...resolveCoords(job.location) ?? { lat: null, lon: null },
         });
       }
     });

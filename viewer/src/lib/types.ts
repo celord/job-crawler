@@ -43,6 +43,8 @@ export type JobRow = {
   parsed_jd?: string | null;
   skill_tier?: string | null;
   employment_type_canonical?: string | null;
+  lat?: number | null;
+  lon?: number | null;
   analysis?: unknown;
 };
 

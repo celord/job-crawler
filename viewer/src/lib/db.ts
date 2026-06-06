@@ -80,6 +80,10 @@ db.exec(`
     AND (LOWER(location) LIKE '%remote%' OR LOWER(location) LIKE '%anywhere%')
 `);
 
+// Add lat/lon columns for geolocation (populated by crawler, idempotent)
+try { db.exec(`ALTER TABLE catalog_jobs ADD COLUMN lat REAL DEFAULT NULL`); } catch { /* exists */ }
+try { db.exec(`ALTER TABLE catalog_jobs ADD COLUMN lon REAL DEFAULT NULL`); } catch { /* exists */ }
+
 // FTS5 virtual table for fast title + location search
 db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS catalog_jobs_fts USING fts5(
