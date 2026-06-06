@@ -9,6 +9,7 @@ import { readQueue, upsertQueueItem, removeQueueItem } from "./lib/queue.js";
 import { startRetryScheduler } from "./lib/retry-scheduler.js";
 import {
   PORT,
+  STATE_DIR,
   SAVED_SEARCH_ANALYZER_ENABLED,
   SAVED_SEARCH_ANALYZER_INTERVAL_MS,
   LOGO_DEV_SECRET_KEY,
@@ -133,6 +134,26 @@ app.get("/api/sources", (_req, res) => {
     res.json({ sources: providers.map((p) => p.provider) });
   } catch (err) {
     console.error("/api/sources error:", err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+app.get("/api/trends", async (_req, res) => {
+  try {
+    const trendsPath = join(STATE_DIR, "trends.jsonl");
+    let raw: string;
+    try {
+      raw = await readFile(trendsPath, "utf8");
+    } catch {
+      return res.json([]);
+    }
+    const lines = raw.trim().split("\n").filter(Boolean);
+    const last30 = lines.slice(-30).map((l) => {
+      try { return JSON.parse(l); } catch { return null; }
+    }).filter(Boolean);
+    res.json(last30);
+  } catch (err) {
+    console.error("/api/trends error:", err);
     res.status(500).json({ error: String(err) });
   }
 });

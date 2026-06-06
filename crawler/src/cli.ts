@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { unlink } from "node:fs/promises";
+import { dirname } from "node:path";
 import { runCrawler } from "./runner.js";
 import { parseProviderList } from "./source-loader.js";
+import { appendTrendEntry } from "./trend-log.js";
 import type { Provider } from "./types.js";
 
 type CliOptions = {
@@ -61,6 +63,12 @@ async function main(): Promise<void> {
   });
 
   await unlink(options.progressFile).catch(() => undefined);
+
+  try {
+    appendTrendEntry(options.catalogDbFile, dirname(options.catalogDbFile));
+  } catch (err) {
+    console.error(`[trend-log] failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   console.log(JSON.stringify({
     started_at: report.started_at,
