@@ -1,21 +1,23 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const TTL_DAYS = parseInt(process.env.DEAD_SLUG_TTL_DAYS ?? "30", 10);
-
-type DeadEntry = { deadAt: string; code: number };
+type DeadEntry = { deadAt: string; code: number; ttlDays: number };
 type DeadMap = Record<string, DeadEntry>;
 
 // Statuses that permanently indicate a dead endpoint
 const DEAD_STATUSES = new Set([404, 410]);
 
+function randomTtl(): number {
+  return 3 + Math.floor(Math.random() * 8); // 3–10 days inclusive
+}
+
 function filePath(stateDir: string, provider: string): string {
   return join(stateDir, `dead_slugs_${provider}.json`);
 }
 
-function isExpired(deadAt: string, ttlDays = TTL_DAYS): boolean {
-  const age = (Date.now() - Date.parse(deadAt)) / 86_400_000;
-  return age > ttlDays;
+function isExpired(entry: DeadEntry): boolean {
+  const age = (Date.now() - Date.parse(entry.deadAt)) / 86_400_000;
+  return age > entry.ttlDays;
 }
 
 function load(stateDir: string, provider: string): DeadMap {
@@ -25,7 +27,7 @@ function load(stateDir: string, provider: string): DeadMap {
     // Prune expired entries on read
     let pruned = false;
     for (const slug of Object.keys(data)) {
-      if (isExpired(data[slug]!.deadAt)) {
+      if (isExpired(data[slug]!)) {
         delete data[slug];
         pruned = true;
       }
@@ -52,6 +54,6 @@ export function loadDeadSlugs(stateDir: string, provider: string): Set<string> {
 export function markDead(stateDir: string, provider: string, slug: string, code: number): void {
   if (!DEAD_STATUSES.has(code)) return;
   const data = load(stateDir, provider);
-  data[slug] = { deadAt: new Date().toISOString(), code };
+  data[slug] = { deadAt: new Date().toISOString(), code, ttlDays: randomTtl() };
   save(stateDir, provider, data);
 }

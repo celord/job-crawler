@@ -194,7 +194,7 @@ export async function runCrawler(options: RunOptions): Promise<CrawlReport> {
     for (const provider of options.selectedProviders) {
       const dead = deadSlugs.get(provider);
       if (dead && dead.size > 0) {
-        console.log(JSON.stringify({ event: "dead_slugs", provider, skipped: dead.size, ttl_days: parseInt(process.env.DEAD_SLUG_TTL_DAYS ?? "30", 10) }));
+        console.log(JSON.stringify({ event: "dead_slugs", provider, skipped: dead.size, ttl_days: "3–10 (random per slug)" }));
       }
     }
   }
