@@ -2,6 +2,7 @@ import { createWriteStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { CatalogStore } from "./catalog-store.js";
+import { loadDeadSlugs, markDead } from "./dead-slugs.js";
 import { HttpError, createHttpClient } from "./http.js";
 import { crawlerByProvider } from "./providers/index.js";
 import { isProvider, loadSourceFile, sourceKey } from "./source-loader.js";
@@ -13,6 +14,7 @@ export type RunOptions = {
   concurrency: number;
   outFile: string;
   reportFile: string;
+  stateDir?: string;
   catalogDbFile?: string;
   catalogFile?: string;
   excludeSourcesFile?: string;
@@ -39,6 +41,10 @@ export async function runCrawler(options: RunOptions): Promise<CrawlReport> {
   const failures: CrawlFailure[] = [];
   const itemsByProvider = new Map<Provider, WorkItem[]>();
   const excludedSources = await loadExcludedSources(options.excludeSourcesFile);
+  const stateDir = options.stateDir ?? (options.catalogDbFile !== undefined ? dirname(options.catalogDbFile) : undefined);
+  const deadSlugs = new Map<Provider, Set<string>>(
+    options.selectedProviders.map((p) => [p, stateDir ? loadDeadSlugs(stateDir, p) : new Set<string>()])
+  );
 
   for (const provider of options.selectedProviders) {
     const sourceFile = await loadSourceFile(options.sourcesDir, provider);
@@ -48,6 +54,10 @@ export async function runCrawler(options: RunOptions): Promise<CrawlReport> {
     for (const source of companies) {
       const key = sourceKey(provider, source);
       if (excludedSources.has(exclusionKey(provider, key))) {
+        stats[provider].skipped += 1;
+        continue;
+      }
+      if (deadSlugs.get(provider)?.has(key)) {
         stats[provider].skipped += 1;
         continue;
       }
@@ -139,6 +149,9 @@ export async function runCrawler(options: RunOptions): Promise<CrawlReport> {
         stats[item.provider].jobs += emitted;
       } catch (error) {
         recordFailure(failures, stats[item.provider], item.provider, key, error);
+        if (stateDir && error instanceof HttpError && error.status !== undefined) {
+          markDead(stateDir, item.provider, key, error.status);
+        }
       } finally {
         completed += 1;
       }
@@ -176,6 +189,16 @@ export async function runCrawler(options: RunOptions): Promise<CrawlReport> {
 
   await writeFile(options.reportFile, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   logProgress("done", startedMs, completed, items.length, stats, failures.length, options.progressFile);
+
+  if (stateDir) {
+    for (const provider of options.selectedProviders) {
+      const dead = deadSlugs.get(provider);
+      if (dead && dead.size > 0) {
+        console.log(JSON.stringify({ event: "dead_slugs", provider, skipped: dead.size, ttl_days: parseInt(process.env.DEAD_SLUG_TTL_DAYS ?? "30", 10) }));
+      }
+    }
+  }
+
   return report;
 }
 
