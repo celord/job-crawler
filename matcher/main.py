@@ -1,0 +1,43 @@
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import APIRouter, FastAPI
+
+from config import settings
+from services.profile import load_profile
+
+
+logging.basicConfig(level=logging.INFO, format="[matcher] %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.profile_loaded = False
+    app.state.profile_error = None
+
+    try:
+        load_profile(settings.career_ops_dir)
+        app.state.profile_loaded = True
+        logger.info("profile loaded from %s", settings.career_ops_dir)
+    except Exception as exc:
+        app.state.profile_error = str(exc)
+        logger.warning("profile not loaded from %s: %s", settings.career_ops_dir, exc)
+
+    yield
+
+
+app = FastAPI(title="matcher-service", lifespan=lifespan)
+
+router = APIRouter()
+
+
+@router.get("/health")
+async def health() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "profile_loaded": bool(app.state.profile_loaded),
+    }
+
+
+app.include_router(router)
