@@ -40,7 +40,9 @@ def _fts_escape(term: str) -> str:
 
 
 def _is_simple_fts_query(tokens: list[dict]) -> bool:
-    return len(tokens) > 0 and all(len(t["terms"]) == 1 and not t["exclude"] for t in tokens)
+    return len(tokens) > 0 and all(
+        len(t["terms"]) == 1 and not t["exclude"] for t in tokens
+    )
 
 
 def _parse_int(raw: str) -> int | None:
@@ -71,7 +73,9 @@ def add_job_filter_conditions(
     company = str(company) if company is not None else ""
     days_str = str(days) if days is not None else ""
     sources_str = (
-        ",".join(sources) if isinstance(sources, list) else str(sources) if sources is not None else ""
+        ",".join(sources)
+        if isinstance(sources, list)
+        else str(sources) if sources is not None else ""
     )
 
     if title.strip():
@@ -88,12 +92,16 @@ def add_job_filter_conditions(
                 terms = token["terms"]
                 if len(terms) == 1:
                     conditions.append(
-                        "LOWER(title) NOT LIKE ?" if token["exclude"] else "LOWER(title) LIKE ?"
+                        "LOWER(title) NOT LIKE ?"
+                        if token["exclude"]
+                        else "LOWER(title) LIKE ?"
                     )
                     params.append(f"%{terms[0]}%")
                 elif token["exclude"]:
                     conditions.append(
-                        "(" + " AND ".join("LOWER(title) NOT LIKE ?" for _ in terms) + ")"
+                        "("
+                        + " AND ".join("LOWER(title) NOT LIKE ?" for _ in terms)
+                        + ")"
                     )
                     params.extend(f"%{t}%" for t in terms)
                 else:
@@ -106,7 +114,11 @@ def add_job_filter_conditions(
     # Empty my_location + include_remote -> remote only.
     # my_location set + include_remote False -> on-site/hybrid near my_location only.
     if my_location or not include_remote:
-        loc_terms = [l.strip() for l in my_location.split(",") if l.strip()] if my_location else []
+        loc_terms = (
+            [l.strip() for l in my_location.split(",") if l.strip()]
+            if my_location
+            else []
+        )
         loc_clauses = ["LOWER(location) LIKE ?" for _ in loc_terms]
         if include_remote:
             conditions.append("(" + " OR ".join([*loc_clauses, "is_remote = 1"]) + ")")
@@ -120,19 +132,25 @@ def add_job_filter_conditions(
 
     if company.strip():
         companies = [c.strip() for c in company.split(",") if c.strip()]
-        conditions.append("(" + " OR ".join("LOWER(source_key) LIKE ?" for _ in companies) + ")")
+        conditions.append(
+            "(" + " OR ".join("LOWER(source_key) LIKE ?" for _ in companies) + ")"
+        )
         params.extend(f"%{c.lower()}%" for c in companies)
 
     if sources_str.strip():
         provider_list = [s.strip() for s in sources_str.split(",") if s.strip()]
         if provider_list:
-            conditions.append("(" + " OR ".join("provider = ?" for _ in provider_list) + ")")
+            conditions.append(
+                "(" + " OR ".join("provider = ?" for _ in provider_list) + ")"
+            )
             params.extend(provider_list)
 
     if days_str.strip():
         n = _parse_int(days_str)
         if n is not None and n > 0:
-            conditions.append("COALESCE(posted_at, first_seen_at) >= datetime('now', ?)")
+            conditions.append(
+                "COALESCE(posted_at, first_seen_at) >= datetime('now', ?)"
+            )
             params.append(f"-{n} days")
 
     # types: canonical employment types to show. NULLs always included.
@@ -149,7 +167,9 @@ def add_job_filter_conditions(
         params.extend(tier_list)
 
     # include: each term must appear in title OR location OR source_key
-    include_terms = [t.strip().lower() for t in str(include or "").split(",") if t.strip()]
+    include_terms = [
+        t.strip().lower() for t in str(include or "").split(",") if t.strip()
+    ]
     for term in include_terms:
         conditions.append(
             "(LOWER(title) LIKE ? OR LOWER(location) LIKE ? OR LOWER(source_key) LIKE ?)"
@@ -157,7 +177,9 @@ def add_job_filter_conditions(
         params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
 
     # exclude: no term may appear in title OR location OR source_key
-    exclude_terms = [t.strip().lower() for t in str(exclude or "").split(",") if t.strip()]
+    exclude_terms = [
+        t.strip().lower() for t in str(exclude or "").split(",") if t.strip()
+    ]
     for term in exclude_terms:
         conditions.append(
             "(LOWER(title) NOT LIKE ? AND LOWER(location) NOT LIKE ? AND LOWER(source_key) NOT LIKE ?)"
@@ -165,7 +187,9 @@ def add_job_filter_conditions(
         params.extend([f"%{term}%", f"%{term}%", f"%{term}%"])
 
     if fav_companies:
-        conditions.append("(" + " OR ".join("LOWER(source_key) = ?" for _ in fav_companies) + ")")
+        conditions.append(
+            "(" + " OR ".join("LOWER(source_key) = ?" for _ in fav_companies) + ")"
+        )
         params.extend(fc.lower() for fc in fav_companies)
 
     if evaluated:
