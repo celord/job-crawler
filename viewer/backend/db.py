@@ -84,7 +84,9 @@ async def _bootstrap_fts() -> None:
     fts_row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs_fts")
     jobs_row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs")
     if fts_row and jobs_row and fts_row["n"] == 0 and jobs_row["n"] > 0:
-        await execute("INSERT INTO catalog_jobs_fts(catalog_jobs_fts) VALUES('rebuild')")
+        await execute(
+            "INSERT INTO catalog_jobs_fts(catalog_jobs_fts) VALUES('rebuild')"
+        )
 
 
 async def run_migrations() -> None:
