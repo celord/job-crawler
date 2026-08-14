@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 import config
 from db import run_migrations
+from routers.jobs import router as jobs_router
 
 
 logging.basicConfig(level=logging.INFO, format="[viewer] %(levelname)s %(message)s")
@@ -35,6 +36,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="viewer-service", lifespan=lifespan)
+app.include_router(jobs_router)
 
 
 @app.get("/")
