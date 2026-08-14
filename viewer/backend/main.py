@@ -7,14 +7,11 @@ from fastapi import FastAPI
 import config
 from db import run_migrations
 from routers.jobs import router as jobs_router
+from services.match_run import mark_orphaned_runs_failed
 
 
 logging.basicConfig(level=logging.INFO, format="[viewer] %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
-
-
-async def _mark_orphaned_runs_failed() -> None:
-    logger.info("mark_orphaned_runs_failed: not yet implemented (Story 3.1)")
 
 
 async def _start_retry_scheduler() -> None:
@@ -29,7 +26,7 @@ async def lifespan(app: FastAPI):
     await run_migrations()
     logger.info("migrations complete")
 
-    await _mark_orphaned_runs_failed()
+    await mark_orphaned_runs_failed()
     await _start_retry_scheduler()
 
     yield
