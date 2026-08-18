@@ -57,6 +57,9 @@ async def executemany(sql: str, params_list: Iterable[SqlParams]) -> None:
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(config.CATALOG_DB, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # WAL lets the crawler write and this service read concurrently without
+    # "database is locked" errors (readers no longer block on the writer).
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 

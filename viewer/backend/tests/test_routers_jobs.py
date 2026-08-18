@@ -8,6 +8,17 @@ def test_list_jobs_empty(app_client):
     assert body == {"jobs": [], "total": 0, "page": 1, "limit": 50}
 
 
+def test_list_jobs_remote_0_no_location_returns_empty(app_client, migrated_env):
+    # Living inline documentation of Story 9.1's specific acceptance case:
+    # remote excluded + no location given is an impossible filter server-side
+    # (services/filters.py appends "1 = 0"), and the route must surface that
+    # as a clean empty result, not an error.
+    insert_job(migrated_env["catalog_db"], job_id="1", location="Miami, FL", is_remote=0)
+    r = app_client.get("/api/jobs?remote=0")
+    assert r.status_code == 200
+    assert r.json() == {"jobs": [], "total": 0, "page": 1, "limit": 50}
+
+
 def test_list_jobs_returns_sanitized_rows(app_client, migrated_env):
     insert_job(migrated_env["catalog_db"], job_id="1", title="Backend Engineer", compensation="REQ-123")
     r = app_client.get("/api/jobs")

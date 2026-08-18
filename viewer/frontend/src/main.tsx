@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "./styles/tokens.css";
 import "./styles/layout.css";
 import "./styles/panel.css";
+import "./styles/drawer.css";
 import "./index.css";
 import App from "./App.tsx";
 

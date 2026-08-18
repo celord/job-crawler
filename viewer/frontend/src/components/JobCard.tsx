@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useBrandSearch, useMatchRun, useStartMatchRun } from "../api/hooks";
 import { companyName, formatRelativeTime, jobMode } from "../lib/jobDisplay";
 import { useLocalStore } from "../stores/localStore";
+import { useToastStore } from "../stores/toastStore";
 import { useUiStore } from "../stores/uiStore";
 import type { Job } from "../types";
 import { jobKey } from "../types";
@@ -25,6 +26,8 @@ export function JobCard({ job }: Props) {
 
   const hiddenJobs = useLocalStore((s) => s.hiddenJobs);
   const hideJob = useLocalStore((s) => s.hideJob);
+  const unhideJob = useLocalStore((s) => s.unhideJob);
+  const addToast = useToastStore((s) => s.addToast);
   const visitedJobs = useLocalStore((s) => s.visitedJobs);
   const visitJob = useLocalStore((s) => s.visitJob);
   const favoriteCompanies = useLocalStore((s) => s.favoriteCompanies);
@@ -93,7 +96,18 @@ export function JobCard({ job }: Props) {
           >
             {isFavorite ? "★" : "☆"}
           </button>
-          <button type="button" onClick={() => hideJob(key)} title="Hide job">
+          <button
+            type="button"
+            onClick={() => {
+              hideJob(key);
+              addToast({
+                message: `Hid "${job.title ?? "job"}".`,
+                kind: "neutral",
+                undo: () => unhideJob(key),
+              });
+            }}
+            title="Hide job"
+          >
             Hide
           </button>
           <button

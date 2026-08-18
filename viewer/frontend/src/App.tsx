@@ -1,10 +1,14 @@
 import { useJobs } from "./api/hooks";
 import { AnalysisPanel } from "./components/AnalysisPanel";
+import { FavoritesModal } from "./components/FavoritesModal";
 import { FilterBar } from "./components/FilterBar";
 import { Header } from "./components/Header";
 import { JobList } from "./components/JobList";
 import { Pagination } from "./components/Pagination";
+import { PasteJDModal } from "./components/PasteJDModal";
+import { QueueDrawer } from "./components/QueueDrawer";
 import { SavedSearchStrip } from "./components/SavedSearchStrip";
+import { ToastStack } from "./components/ToastStack";
 import { useActiveSearchIds, useMergedSearchJobs, useSavedSearches } from "./hooks/useSavedSearches";
 import { useFilterStore } from "./stores/filterStore";
 
@@ -58,6 +62,10 @@ function App() {
         />
       )}
       <AnalysisPanel />
+      <QueueDrawer />
+      <PasteJDModal />
+      <FavoritesModal />
+      <ToastStack />
     </div>
   );
 }

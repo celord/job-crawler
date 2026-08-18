@@ -21,6 +21,7 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
 export function AnalysisPanel() {
   const activePanelJobKey = useUiStore((s) => s.activePanelJobKey);
   const setActivePanelJobKey = useUiStore((s) => s.setActivePanelJobKey);
+  const setPasteJDModalOpen = useUiStore((s) => s.setPasteJDModalOpen);
   const visitJob = useLocalStore((s) => s.visitJob);
 
   const jobQuery = useJob(activePanelJobKey);
@@ -160,7 +161,10 @@ export function AnalysisPanel() {
               </button>
             </div>
 
-            <JDAccordion jobKey={activePanelJobKey!} />
+            <JDAccordion
+              jobKey={activePanelJobKey!}
+              onRequestPasteJD={() => setPasteJDModalOpen(true)}
+            />
           </>
         )}
       </div>

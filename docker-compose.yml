@@ -52,11 +52,16 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./viewer/public:/app/public:ro
       - ./crawler/state:/app/state
       - ./matcher:/matcher:ro
     environment:
       CATALOG_DB: /app/state/catalog.sqlite
+      # The production image copies frontend/dist to ./static (WORKDIR
+      # /app), not to a frontend/ sibling of backend/ — config.py's
+      # STATIC_DIR/SAVED_SEARCHES_PATH defaults assume the dev-time
+      # backend+frontend sibling layout, so both need overriding here.
+      STATIC_DIR: /app/static
+      SAVED_SEARCHES_PATH: /app/static/saved-searches.json
       CAREER_OPS_DIR: ${CAREER_OPS_DIR:-career-ops}
       LOGO_DEV_PUBLISHABLE_KEY: ${LOGO_DEV_PUBLISHABLE_KEY:-}
       LOGO_DEV_SECRET_KEY: ${LOGO_DEV_SECRET_KEY:-}
