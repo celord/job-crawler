@@ -66,29 +66,21 @@ def test_run_id_from_item_id_no_colon():
     assert queue_store.run_id_from_item_id("no-colon") == "no-colon"
 
 
-def test_build_subtasks_ensemble_has_five():
+def test_build_subtasks_ensemble_has_three():
     subtasks = queue_store.build_subtasks("claude-ensemble")
-    assert len(subtasks) == 5
+    assert len(subtasks) == 3
     ids = [s["id"] for s in subtasks]
-    assert ids == ["scorer:maverick", "scorer:kimi", "scorer:nemotron", "synthesis", "discord"]
+    assert ids == ["parse", "score", "discord"]
     assert all(s["status"] == "todo" for s in subtasks)
+    assert next(s for s in subtasks if s["id"] == "score")["label"] == "Ensemble score"
 
 
-def test_build_subtasks_quick_has_two():
+def test_build_subtasks_quick_has_three():
     subtasks = queue_store.build_subtasks("claude")
-    assert len(subtasks) == 2
-    assert subtasks[0]["id"] == "model:claude"
-    assert subtasks[1]["id"] == "discord"
-
-
-def test_build_subtasks_uses_custom_scorer_env(monkeypatch):
-    import config
-
-    monkeypatch.setattr(config, "NVIDIA_ENSEMBLE_SCORERS", "org/model-a,org/model-b")
-    subtasks = queue_store.build_subtasks("claude-ensemble")
-    labels = [s["label"] for s in subtasks]
-    assert "model-a (scorer)" in labels
-    assert "model-b (scorer)" in labels
+    assert len(subtasks) == 3
+    ids = [s["id"] for s in subtasks]
+    assert ids == ["parse", "score", "discord"]
+    assert next(s for s in subtasks if s["id"] == "score")["label"] == "Score"
 
 
 def test_retry_backoff_seconds_formula():

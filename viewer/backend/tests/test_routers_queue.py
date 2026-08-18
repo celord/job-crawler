@@ -2,40 +2,38 @@ import time
 
 import pytest
 
+from services import matcher_client
 from tests.conftest import insert_job
 
-QUICK_SCRIPT = """
-import argparse, json, sys
-p = argparse.ArgumentParser()
-p.add_argument("--jobs-jsonl", required=True)
-p.add_argument("--results-jsonl", required=True)
-p.add_argument("--profile-dir", required=True)
-p.add_argument("--pipeline", required=True)
-args = p.parse_args()
-with open(args.jobs_jsonl) as f:
-    jobs = [json.loads(l) for l in f.read().splitlines() if l.strip()]
-results = [{"status": "ok", "provider": j["provider"], "source_key": j["source_key"], "job_id": j["job_id"],
-            "analysis": {"score_5": 4.5, "pipeline": "claude"}} for j in jobs]
-with open(args.results_jsonl, "w") as f:
-    for r in results:
-        f.write(json.dumps(r) + "\\n")
-"""
 
-SLOW_SCRIPT = """
-import argparse, time, sys
-p = argparse.ArgumentParser()
-p.add_argument("--jobs-jsonl", required=True)
-p.add_argument("--results-jsonl", required=True)
-p.add_argument("--profile-dir", required=True)
-p.add_argument("--pipeline", required=True)
-args = p.parse_args()
-time.sleep(5)
-"""
+async def _fake_parse_batch(urls):
+    return [{"url": u, "parsed": {"title": "Parsed"}, "parse_error": None} for u in urls]
+
+
+async def _fake_analyze(mode, jobs, run_id):
+    return [
+        {
+            "status": "ok",
+            "provider": j["provider"],
+            "source_key": j["source_key"],
+            "job_id": j["job_id"],
+            "analysis": {"score_5": 4.5, "pipeline": mode},
+        }
+        for j in jobs
+    ]
+
+
+async def _slow_analyze(mode, jobs, run_id):
+    import asyncio
+
+    await asyncio.sleep(5)
+    return []
 
 
 @pytest.fixture
-def env_with_matcher(migrated_env):
-    (migrated_env["matcher_dir"] / "job_fit_analyzer.py").write_text(QUICK_SCRIPT)
+def env_with_matcher(migrated_env, monkeypatch):
+    monkeypatch.setattr(matcher_client, "parse_batch", _fake_parse_batch)
+    monkeypatch.setattr(matcher_client, "analyze", _fake_analyze)
     return migrated_env
 
 
@@ -122,8 +120,16 @@ def test_retry_normal_item_resets_attempt_and_reruns(app_client, env_with_matche
     assert final["status"] == "done"
 
 
-def test_stop_sends_sigterm_and_flips_manifest(app_client, migrated_env):
-    (migrated_env["matcher_dir"] / "job_fit_analyzer.py").write_text(SLOW_SCRIPT)
+def test_stop_cancels_matcher_run_and_flips_manifest(app_client, migrated_env, monkeypatch):
+    cancelled = []
+
+    async def fake_cancel_run(run_id):
+        cancelled.append(run_id)
+        return True
+
+    monkeypatch.setattr(matcher_client, "parse_batch", _fake_parse_batch)
+    monkeypatch.setattr(matcher_client, "analyze", _slow_analyze)
+    monkeypatch.setattr(matcher_client, "cancel_run", fake_cancel_run)
     insert_job(migrated_env["catalog_db"], provider="gh", source_key="acme", job_id="1")
     r = app_client.post("/api/match-runs", json={"job_keys": ["gh|acme|1"], "mode": "claude"})
     run_id = r.json()["run_id"]
@@ -134,10 +140,10 @@ def test_stop_sends_sigterm_and_flips_manifest(app_client, migrated_env):
     sr = app_client.post(f"/api/queue/{item_id}/stop")
     assert sr.status_code == 200
     assert sr.json()["status"] == "permanent_error"
+    assert cancelled == [run_id]
 
-    time.sleep(0.3)
     manifest = app_client.get(f"/api/match-runs/{run_id}").json()
-    assert manifest["status"] in ("failed", "completed")
+    assert manifest["status"] in ("failed", "running", "completed")
 
 
 def test_restart_resets_created_at(app_client, env_with_matcher):

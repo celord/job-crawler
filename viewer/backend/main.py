@@ -15,7 +15,7 @@ from routers.config_router import router as config_router
 from routers.jobs import router as jobs_router
 from routers.match_runs import router as match_runs_router
 from routers.queue import router as queue_router
-from services import retry_scheduler, saved_search
+from services import matcher_client, retry_scheduler, saved_search
 from services.match_run import mark_orphaned_runs_failed
 
 logging.basicConfig(level=logging.INFO, format="[viewer] %(levelname)s %(message)s")
@@ -32,6 +32,8 @@ async def lifespan(app: FastAPI):
     await run_migrations()
     logger.info("migrations complete")
 
+    matcher_client.start_client()
+
     await mark_orphaned_runs_failed()
     retry_scheduler.start()
     saved_search.start()
@@ -40,6 +42,7 @@ async def lifespan(app: FastAPI):
 
     await retry_scheduler.stop()
     await saved_search.stop()
+    await matcher_client.stop_client()
 
 
 app = FastAPI(title="viewer-service", lifespan=lifespan)

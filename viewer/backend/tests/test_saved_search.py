@@ -4,35 +4,29 @@ import pytest
 
 import config
 from services import match_run as mr
-from services import queue_store, saved_search
+from services import matcher_client, queue_store, saved_search
 from tests.conftest import insert_job
-
-ENSEMBLE_SCRIPT = """
-import argparse, json, sys
-p = argparse.ArgumentParser()
-p.add_argument("--jobs-jsonl", required=True)
-p.add_argument("--results-jsonl", required=True)
-p.add_argument("--profile-dir", required=True)
-p.add_argument("--pipeline", required=True)
-args = p.parse_args()
-with open(args.jobs_jsonl) as f:
-    jobs = [json.loads(l) for l in f.read().splitlines() if l.strip()]
-results = []
-for job in jobs:
-    label = f"{job['company']} | {job['title']}"
-    print(f"[ensemble] {label} | start", file=sys.stderr, flush=True)
-    print(f"[ensemble] {label} | scorer maverick | avg=4.5", file=sys.stderr, flush=True)
-    results.append({"status": "ok", "provider": job["provider"], "source_key": job["source_key"],
-                     "job_id": job["job_id"], "analysis": {"score_5": 4.5, "pipeline": "claude-ensemble"}})
-with open(args.results_jsonl, "w") as f:
-    for r in results:
-        f.write(json.dumps(r) + "\\n")
-"""
 
 
 @pytest.fixture
-def env(isolated_env):
-    (isolated_env["matcher_dir"] / "ensemble_runner.py").write_text(ENSEMBLE_SCRIPT)
+def env(isolated_env, monkeypatch):
+    async def fake_parse_batch(urls):
+        return [{"url": url, "parsed": {"title": "Parsed"}, "parse_error": None} for url in urls]
+
+    async def fake_analyze(mode, jobs, run_id):
+        return [
+            {
+                "status": "ok",
+                "provider": j["provider"],
+                "source_key": j["source_key"],
+                "job_id": j["job_id"],
+                "analysis": {"score_5": 4.5, "pipeline": "ensemble"},
+            }
+            for j in jobs
+        ]
+
+    monkeypatch.setattr(matcher_client, "parse_batch", fake_parse_batch)
+    monkeypatch.setattr(matcher_client, "analyze", fake_analyze)
     return isolated_env
 
 
