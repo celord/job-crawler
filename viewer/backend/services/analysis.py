@@ -31,7 +31,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _analysis_score_5(analysis: object) -> float | None:
+def analysis_score_5(analysis: object) -> float | None:
     if not isinstance(analysis, dict):
         return None
     value = analysis.get("score_5")
@@ -43,7 +43,7 @@ def _analysis_score_5(analysis: object) -> float | None:
 
 
 async def _write_score_to_job_row(job_key: str, analysis: object) -> None:
-    score = _analysis_score_5(analysis)
+    score = analysis_score_5(analysis)
     if score is None:
         return
     parsed = parse_job_key(job_key)
@@ -190,11 +190,7 @@ async def upsert_analysis(job_key: str, pipeline: str, analysis_obj: object, run
     invalidate_analysis_cache()
 
 
-async def _notify_score_if_needed(row: dict, run_id: str) -> None:
-    logger.info("notify_score_if_needed: not yet implemented (Story 6.2)")
-
-
-async def persist_run_results(results: list[dict], run_id: str) -> None:
+async def persist_run_results(results: list[dict], run_id: str, notify_fn=None) -> None:
     analyzed_at = _now_iso()
     batch: list[tuple] = []
     ok_rows: list[dict] = []
@@ -220,6 +216,6 @@ async def persist_run_results(results: list[dict], run_id: str) -> None:
 
     invalidate_analysis_cache()
 
-    if ok_rows:
-        notif_tasks = [_notify_score_if_needed(row, run_id) for row in ok_rows]
+    if ok_rows and notify_fn is not None:
+        notif_tasks = [notify_fn(row, run_id) for row in ok_rows]
         await asyncio.gather(*notif_tasks, return_exceptions=True)

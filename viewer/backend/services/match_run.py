@@ -14,6 +14,7 @@ from db import execute
 from services import queue_store
 from services.analysis import persist_run_results
 from services.company import company_name, is_real_compensation, sanitize_job
+from services.notifications import notify_discord_for_score
 
 logger = logging.getLogger(__name__)
 
@@ -546,7 +547,7 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
             item["updated_at"] = discord_started
             await queue_store.upsert_queue_item(item)
 
-        await persist_run_results(results, run_id)
+        await persist_run_results(results, run_id, notify_discord_for_score)
 
         score_by_job_key: dict[str, float] = {}
         for row in results:

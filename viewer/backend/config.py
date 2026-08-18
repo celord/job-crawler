@@ -32,3 +32,21 @@ SAVED_SEARCH_ANALYZER_INTERVAL_MS = int(
 )
 
 SKIP_TIERS = os.environ.get("SKIP_TIERS", "intern")
+
+HIDDEN_JOBS_PATH = os.environ.get("HIDDEN_JOBS_PATH", str(Path(STATE_DIR) / "hidden-jobs.json"))
+SCORE_NOTIFICATIONS_PATH = os.environ.get(
+    "SCORE_NOTIFICATIONS_PATH", str(Path(STATE_DIR) / "score-notifications.json")
+)
+CRAWLER_ACTIVE_LOCK_PATH = os.environ.get(
+    "CRAWLER_ACTIVE_LOCK_PATH", str(Path(STATE_DIR) / "crawler-active.lock")
+)
+CRAWLER_ACTIVE_LOCK_STALE_MS = int(os.environ.get("CRAWLER_ACTIVE_LOCK_STALE_MS", "7200000"))
+CRAWLER_PROGRESS_PATH = os.environ.get(
+    "CRAWLER_PROGRESS_PATH", str(Path(STATE_DIR) / "crawler-progress.json")
+)
+
+_BACKEND_DIR = Path(__file__).resolve().parent
+SAVED_SEARCHES_PATH = os.environ.get(
+    "SAVED_SEARCHES_PATH", str(_BACKEND_DIR.parent / "frontend" / "public" / "saved-searches.json")
+)
+STATIC_DIR = os.environ.get("STATIC_DIR", str(_BACKEND_DIR.parent / "frontend" / "dist"))
