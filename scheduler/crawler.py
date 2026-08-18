@@ -44,6 +44,11 @@ def run_crawler() -> None:
     except subprocess.TimeoutExpired as exc:
         logger.error("Crawler timed out after %ss", CRAWLER_TIMEOUT_S)
         send_failure_notification(f"Crawler timed out after {CRAWLER_TIMEOUT_S}s: {exc}")
+    except OSError as exc:
+        # e.g. the docker CLI binary itself is missing or unreachable —
+        # distinct from the crawler container running and failing.
+        logger.error("Could not invoke docker: %s", exc)
+        send_failure_notification(f"Could not invoke docker: {exc}")
     finally:
         # Record the run on both success and failure — a crash must not
         # bypass the debounce guard on the next scheduled tick.
