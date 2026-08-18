@@ -2,7 +2,7 @@ import json
 import logging
 import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import aiofiles
 import httpx
@@ -26,12 +26,12 @@ _ID_SANITIZE_RE = re.compile(r"[^a-z0-9_]", re.IGNORECASE)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 async def read_score_notifications() -> dict:
     try:
-        async with aiofiles.open(config.SCORE_NOTIFICATIONS_PATH, "r", encoding="utf-8") as f:
+        async with aiofiles.open(config.SCORE_NOTIFICATIONS_PATH, encoding="utf-8") as f:
             raw = await f.read()
         parsed = json.loads(raw)
         sent = parsed.get("sent")
@@ -47,7 +47,7 @@ async def write_score_notifications(state: dict) -> None:
 
 async def read_hidden_jobs() -> set[str]:
     try:
-        async with aiofiles.open(config.HIDDEN_JOBS_PATH, "r", encoding="utf-8") as f:
+        async with aiofiles.open(config.HIDDEN_JOBS_PATH, encoding="utf-8") as f:
             raw = await f.read()
         parsed = json.loads(raw)
         hidden = parsed.get("hidden")
@@ -135,21 +135,25 @@ async def notify_discord_for_score(row: dict, run_id: str) -> bool:
         raw_id = f"discord_{run_id}_{provider}_{source_key}_{job_id}"
         discord_queue_id = _ID_SANITIZE_RE.sub("_", raw_id)
         now = _now_iso()
-        await queue_store.upsert_queue_item({
-            "id": discord_queue_id,
-            "job_key": key,
-            "title": title,
-            "company": company,
-            "mode": "discord-only",
-            "status": "retrying",
-            "subtasks": [{"id": "discord", "label": "Discord push", "status": "error", "error": err_msg}],
-            "attempt": 1,
-            "max_attempts": 3,
-            "next_retry_at": (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat().replace("+00:00", "Z"),
-            "created_at": now,
-            "updated_at": now,
-            "error": json.dumps({**row, "_run_id": run_id}),
-        })
+        await queue_store.upsert_queue_item(
+            {
+                "id": discord_queue_id,
+                "job_key": key,
+                "title": title,
+                "company": company,
+                "mode": "discord-only",
+                "status": "retrying",
+                "subtasks": [{"id": "discord", "label": "Discord push", "status": "error", "error": err_msg}],
+                "attempt": 1,
+                "max_attempts": 3,
+                "next_retry_at": (datetime.now(UTC) + timedelta(seconds=60))
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "created_at": now,
+                "updated_at": now,
+                "error": json.dumps({**row, "_run_id": run_id}),
+            }
+        )
         raise RuntimeError(err_msg)
 
     notifications["sent"][key] = {"score_5": score, "notified_at": _now_iso(), "run_id": run_id}

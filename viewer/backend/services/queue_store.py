@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiofiles
@@ -9,12 +9,15 @@ import aiofiles
 import config
 
 _LOCK = asyncio.Lock()
-QUEUE_PATH = Path(config.STATE_DIR) / "retry-queue.json"
+
+
+def queue_path() -> Path:
+    return Path(config.STATE_DIR) / "retry-queue.json"
 
 
 async def read_queue() -> list[dict]:
     try:
-        async with aiofiles.open(QUEUE_PATH, "r", encoding="utf-8") as f:
+        async with aiofiles.open(queue_path(), encoding="utf-8") as f:
             raw = await f.read()
         data = json.loads(raw)
         return data if isinstance(data, list) else []
@@ -23,10 +26,11 @@ async def read_queue() -> list[dict]:
 
 
 async def _write_queue_unlocked(items: list[dict]) -> None:
-    tmp_path = QUEUE_PATH.with_name(f".{QUEUE_PATH.name}.tmp")
+    path = queue_path()
+    tmp_path = path.with_name(f".{path.name}.tmp")
     async with aiofiles.open(tmp_path, "w", encoding="utf-8") as f:
         await f.write(json.dumps(items, indent=2) + "\n")
-    os.replace(tmp_path, QUEUE_PATH)
+    os.replace(tmp_path, path)
 
 
 async def write_queue(items: list[dict]) -> None:
@@ -92,9 +96,9 @@ def build_subtasks(mode: str) -> list[dict]:
 
 
 def retry_backoff_seconds(attempt: int) -> int:
-    return 30 * (2 ** attempt)
+    return 30 * (2**attempt)
 
 
 def next_retry_at(attempt: int) -> str:
     delay = timedelta(seconds=retry_backoff_seconds(attempt))
-    return (datetime.now(timezone.utc) + delay).isoformat().replace("+00:00", "Z")
+    return (datetime.now(UTC) + delay).isoformat().replace("+00:00", "Z")

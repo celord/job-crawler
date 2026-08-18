@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -36,7 +36,7 @@ class MatchRunWithJdRequest(BaseModel):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _base_manifest(run_id: str, mode: str, job_count: int) -> dict:
@@ -89,25 +89,31 @@ async def create_match_run_with_jd(body: MatchRunWithJdRequest) -> dict:
         "SELECT * FROM catalog_jobs WHERE provider = ? AND source_key = ? AND job_id = ?",
         (body.provider, body.source_key, body.job_id),
     )
-    job = row if row is not None else {
-        "provider": body.provider,
-        "source_key": body.source_key,
-        "job_id": body.job_id,
-    }
+    job = (
+        row
+        if row is not None
+        else {
+            "provider": body.provider,
+            "source_key": body.source_key,
+            "job_id": body.job_id,
+        }
+    )
 
     run_id = generate_run_id()
     manifest = _base_manifest(run_id, body.mode, 1)
     manifest["parsed_count"] = 1
     await write_manifest(run_id, manifest)
 
-    line = json.dumps({
-        **sanitize_job(job),
-        "company": company_name(job),
-        "jd_text": body.jd_text.strip(),
-        "job_url": job.get("job_url"),
-        "url": job.get("job_url"),
-        "parse_error": None,
-    })
+    line = json.dumps(
+        {
+            **sanitize_job(job),
+            "company": company_name(job),
+            "jd_text": body.jd_text.strip(),
+            "job_url": job.get("job_url"),
+            "url": job.get("job_url"),
+            "parse_error": None,
+        }
+    )
 
     asyncio.create_task(execute_match_run_from_input(run_id, [line], body.mode))
 

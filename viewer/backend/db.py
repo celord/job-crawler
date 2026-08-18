@@ -1,9 +1,10 @@
 import asyncio
 import sqlite3
+from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from config import CATALOG_DB
-from typing import Callable, ParamSpec, TypeVar, Any
-from collections.abc import Iterable, Sequence
+from typing import Any, ParamSpec, TypeVar
+
+import config
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -54,17 +55,17 @@ async def executemany(sql: str, params_list: Iterable[SqlParams]) -> None:
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(CATALOG_DB, check_same_thread=False)
+    conn = sqlite3.connect(config.CATALOG_DB, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-async def _run_db(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+async def _run_db[**P, T](fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(EXECUTOR, lambda: fn(*args, **kwargs))
 
 
-def _with_conn(work_fn: Callable[[sqlite3.Connection], T]) -> T:
+def _with_conn[T](work_fn: Callable[[sqlite3.Connection], T]) -> T:
     conn = _connect()
     try:
         return work_fn(conn)
@@ -84,9 +85,7 @@ async def _bootstrap_fts() -> None:
     fts_row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs_fts")
     jobs_row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs")
     if fts_row and jobs_row and fts_row["n"] == 0 and jobs_row["n"] > 0:
-        await execute(
-            "INSERT INTO catalog_jobs_fts(catalog_jobs_fts) VALUES('rebuild')"
-        )
+        await execute("INSERT INTO catalog_jobs_fts(catalog_jobs_fts) VALUES('rebuild')")
 
 
 async def run_migrations() -> None:

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from services import queue_store
 from services.match_run import execute_match_run_from_input, read_input_lines
@@ -14,7 +14,7 @@ _task: asyncio.Task | None = None
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 async def _retry_discord_only(item: dict) -> None:
@@ -36,19 +36,24 @@ async def _retry_discord_only(item: dict) -> None:
         err_msg = str(exc)
         next_attempt = item["attempt"] + 1
         is_permanent = next_attempt >= item["max_attempts"]
-        await queue_store.upsert_queue_item({
-            **item,
-            "attempt": next_attempt,
-            "status": "permanent_error" if is_permanent else "retrying",
-            "next_retry_at": None if is_permanent else queue_store.next_retry_at(next_attempt),
-            "updated_at": _now_iso(),
-            "error": err_msg,
-            "subtasks": [
-                {**s, "status": "permanent_error" if is_permanent else "error", "error": err_msg}
-                if s.get("id") == "discord" else s
-                for s in subtasks
-            ],
-        })
+        await queue_store.upsert_queue_item(
+            {
+                **item,
+                "attempt": next_attempt,
+                "status": "permanent_error" if is_permanent else "retrying",
+                "next_retry_at": None if is_permanent else queue_store.next_retry_at(next_attempt),
+                "updated_at": _now_iso(),
+                "error": err_msg,
+                "subtasks": [
+                    (
+                        {**s, "status": "permanent_error" if is_permanent else "error", "error": err_msg}
+                        if s.get("id") == "discord"
+                        else s
+                    )
+                    for s in subtasks
+                ],
+            }
+        )
 
 
 async def _retry_match_run(item: dict) -> None:
@@ -65,7 +70,8 @@ async def _tick() -> None:
     now = _now_iso()
     items = await queue_store.read_queue()
     due = [
-        item for item in items
+        item
+        for item in items
         if item.get("status") == "retrying" and item.get("next_retry_at") and item["next_retry_at"] <= now
     ]
 
