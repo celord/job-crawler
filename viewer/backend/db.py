@@ -95,8 +95,12 @@ async def run_migrations() -> None:
     await _add_column_if_missing("analysis_score", "REAL")
     await _add_column_if_missing("parsed_jd", "TEXT")
     await execute(
+        # The crawler's real catalog_jobs schema has a composite primary key
+        # (provider, source_key, job_id) and no explicit "id" column —
+        # content_rowid must reference SQLite's implicit rowid, not a column
+        # that doesn't exist in production, or this statement fails outright.
         "CREATE VIRTUAL TABLE IF NOT EXISTS catalog_jobs_fts "
-        "USING fts5(title, content=catalog_jobs, content_rowid=id)"
+        "USING fts5(title, content=catalog_jobs, content_rowid=rowid)"
     )
     await execute(
         "CREATE TABLE IF NOT EXISTS job_analyses ("

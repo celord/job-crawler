@@ -52,3 +52,40 @@ async def test_run_migrations_is_idempotent(isolated_env):
     await run_migrations()  # must not raise on the second pass (duplicate column etc.)
     rows = await fetchall("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'job_analyses'")
     assert len(rows) == 1
+
+
+async def test_run_migrations_against_real_crawler_schema(isolated_env):
+    """The crawler's actual catalog_jobs schema has a composite primary key
+    (provider, source_key, job_id) and no explicit "id" column — unlike this
+    test suite's own fixture schema. Migrations must work against that real
+    shape too: content_rowid=id previously made CREATE VIRTUAL TABLE succeed
+    (SQLite doesn't validate the column at creation time) but _bootstrap_fts's
+    COUNT query against catalog_jobs_fts then failed with "no such column:
+    T.id", which only surfaced against a real crawler-created database."""
+    import sqlite3
+
+    conn = sqlite3.connect(isolated_env["catalog_db"])
+    conn.executescript(
+        "DROP TABLE catalog_jobs;"
+        "CREATE TABLE catalog_jobs ("
+        "  provider TEXT NOT NULL, source_key TEXT NOT NULL, job_id TEXT NOT NULL,"
+        "  title TEXT, location TEXT, employment_type TEXT, compensation TEXT,"
+        "  department TEXT, office TEXT, language TEXT, updated_at TEXT, posted_at TEXT,"
+        "  job_url TEXT, fetched_at TEXT NOT NULL, first_seen_at TEXT NOT NULL,"
+        "  last_seen_at TEXT NOT NULL, seen_run_id TEXT NOT NULL,"
+        "  raw_json TEXT NOT NULL DEFAULT 'null',"
+        "  PRIMARY KEY (provider, source_key, job_id)"
+        ");"
+    )
+    conn.execute(
+        "INSERT INTO catalog_jobs (provider, source_key, job_id, title, fetched_at, "
+        "first_seen_at, last_seen_at, seen_run_id) "
+        "VALUES ('gh', 'acme', '1', 'Backend Engineer', 'x', 'x', 'x', 'run1')"
+    )
+    conn.commit()
+    conn.close()
+
+    await run_migrations()  # must not raise sqlite3.OperationalError: no such column: T.id
+
+    fts_row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs_fts")
+    assert fts_row["n"] == 1  # _bootstrap_fts's rebuild populated the index
