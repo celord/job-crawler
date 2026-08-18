@@ -26,16 +26,10 @@ class Settings:
         "NVIDIA_MODEL",
         "meta/llama-4-maverick-17b-128e-instruct",
     )
-    nvidia_base_url: str = os.environ.get(
-        "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
-    )
-    nvidia_nim_base_url: str = os.environ.get(
-        "NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"
-    )
+    nvidia_base_url: str = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    nvidia_nim_base_url: str = os.environ.get("NVIDIA_NIM_BASE_URL", "https://integrate.api.nvidia.com/v1")
     nvidia_chat_completions_url: str = os.environ.get("NVIDIA_CHAT_COMPLETIONS_URL", "")
-    nvidia_nim_chat_completions_url: str = os.environ.get(
-        "NVIDIA_NIM_CHAT_COMPLETIONS_URL", ""
-    )
+    nvidia_nim_chat_completions_url: str = os.environ.get("NVIDIA_NIM_CHAT_COMPLETIONS_URL", "")
     nvidia_ensemble_scorers: list[str] = field(
         default_factory=lambda: _env_csv(
             "NVIDIA_ENSEMBLE_SCORERS",
@@ -48,6 +42,8 @@ class Settings:
     )
     use_jsonld_input: bool = _env_bool("USE_JSONLD_INPUT", "")
     matcher_port: int = int(os.environ.get("MATCHER_PORT", "8001"))
+    state_dir: str = os.environ.get("STATE_DIR", "/app/state")
+    ensemble_job_concurrency: int = int(os.environ.get("ENSEMBLE_JOB_CONCURRENCY", "1"))
 
 
 settings = Settings()

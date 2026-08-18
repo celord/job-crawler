@@ -430,7 +430,9 @@ def _remove_consulting_false_positive(analysis, jd_text):
     target = scorecard.get("target_alignment")
     if isinstance(target, dict) and float(target.get("score", 5.0) or 5.0) <= 2.0:
         target["score"] = 3.5
-        target["reason"] = "[Guardrail] Check A false positive removed — no explicit consulting signals in JD."
+        target["reason"] = (
+            "[Guardrail] Check A false positive removed — no explicit consulting signals in JD."
+        )
 
 
 def apply_match_guardrails(analysis, match_context):

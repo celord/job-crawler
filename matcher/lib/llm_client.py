@@ -39,10 +39,14 @@ def chat_completions_url() -> str:
         return explicit_url.strip().rstrip("/")
 
     base_url = (
-        os.environ.get("NVIDIA_BASE_URL")
-        or os.environ.get("NVIDIA_NIM_BASE_URL")
-        or DEFAULT_NVIDIA_BASE_URL
-    ).strip().rstrip("/")
+        (
+            os.environ.get("NVIDIA_BASE_URL")
+            or os.environ.get("NVIDIA_NIM_BASE_URL")
+            or DEFAULT_NVIDIA_BASE_URL
+        )
+        .strip()
+        .rstrip("/")
+    )
     if base_url.endswith("/chat/completions"):
         return base_url
     return f"{base_url}/chat/completions"

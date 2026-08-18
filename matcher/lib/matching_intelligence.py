@@ -13,10 +13,10 @@ The LLM explains and arbitrates — it does not invent geographic or requirement
 
 import json
 import re
-from pathlib import Path
 
 try:
     import yaml
+
     _YAML_AVAILABLE = True
 except ImportError:
     _YAML_AVAILABLE = False
@@ -27,20 +27,56 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 US_STATE_NAMES: dict[str, str] = {
-    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR",
-    "california": "CA", "colorado": "CO", "connecticut": "CT", "delaware": "DE",
-    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
-    "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS",
-    "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
-    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
-    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE",
-    "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
-    "new mexico": "NM", "new york": "NY", "north carolina": "NC",
-    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
-    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC",
-    "south dakota": "SD", "tennessee": "TN", "texas": "TX", "utah": "UT",
-    "vermont": "VT", "virginia": "VA", "washington": "WA",
-    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+    "alabama": "AL",
+    "alaska": "AK",
+    "arizona": "AZ",
+    "arkansas": "AR",
+    "california": "CA",
+    "colorado": "CO",
+    "connecticut": "CT",
+    "delaware": "DE",
+    "florida": "FL",
+    "georgia": "GA",
+    "hawaii": "HI",
+    "idaho": "ID",
+    "illinois": "IL",
+    "indiana": "IN",
+    "iowa": "IA",
+    "kansas": "KS",
+    "kentucky": "KY",
+    "louisiana": "LA",
+    "maine": "ME",
+    "maryland": "MD",
+    "massachusetts": "MA",
+    "michigan": "MI",
+    "minnesota": "MN",
+    "mississippi": "MS",
+    "missouri": "MO",
+    "montana": "MT",
+    "nebraska": "NE",
+    "nevada": "NV",
+    "new hampshire": "NH",
+    "new jersey": "NJ",
+    "new mexico": "NM",
+    "new york": "NY",
+    "north carolina": "NC",
+    "north dakota": "ND",
+    "ohio": "OH",
+    "oklahoma": "OK",
+    "oregon": "OR",
+    "pennsylvania": "PA",
+    "rhode island": "RI",
+    "south carolina": "SC",
+    "south dakota": "SD",
+    "tennessee": "TN",
+    "texas": "TX",
+    "utah": "UT",
+    "vermont": "VT",
+    "virginia": "VA",
+    "washington": "WA",
+    "west virginia": "WV",
+    "wisconsin": "WI",
+    "wyoming": "WY",
 }
 US_STATE_CODES: set[str] = set(US_STATE_NAMES.values())
 
@@ -69,7 +105,28 @@ COUNTRY_NAMES: dict[str, str] = {code: aliases[0].title() for code, aliases in C
 EU_COUNTRY_CODES: set[str] = {"DE", "AT", "NL", "PT", "ES", "FR", "IE", "PL", "RO"}
 
 # Ambiguous two-letter codes that appear in non-geographic contexts
-_AMBIGUOUS_STATE_CODES: set[str] = {"ID", "IN", "ME", "OR", "OK", "IL", "AL", "DE", "HI", "MS", "MT", "NE", "NH", "NM", "ND", "RI", "SD", "VT", "WV", "WY"}
+_AMBIGUOUS_STATE_CODES: set[str] = {
+    "ID",
+    "IN",
+    "ME",
+    "OR",
+    "OK",
+    "IL",
+    "AL",
+    "DE",
+    "HI",
+    "MS",
+    "MT",
+    "NE",
+    "NH",
+    "NM",
+    "ND",
+    "RI",
+    "SD",
+    "VT",
+    "WV",
+    "WY",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -78,32 +135,130 @@ _AMBIGUOUS_STATE_CODES: set[str] = {"ID", "IN", "ME", "OR", "OK", "IL", "AL", "D
 
 _TECH_TOOL_TERMS: list[str] = [
     # Languages
-    "SQL", "Python", "JavaScript", "TypeScript", "Java", "C#", r"C\+\+", "Go", "Golang",
-    "Ruby", "PHP", "Scala", "Kotlin", "Swift", "R",
+    "SQL",
+    "Python",
+    "JavaScript",
+    "TypeScript",
+    "Java",
+    "C#",
+    r"C\+\+",
+    "Go",
+    "Golang",
+    "Ruby",
+    "PHP",
+    "Scala",
+    "Kotlin",
+    "Swift",
+    "R",
     # Frameworks / APIs
-    r"React", r"Vue", r"Angular", r"Node\.?js", r"Next\.?js", "Nuxt", "Django", "Flask",
-    "FastAPI", "Rails", "Spring", "GraphQL", "REST", "gRPC", "tRPC",
+    r"React",
+    r"Vue",
+    r"Angular",
+    r"Node\.?js",
+    r"Next\.?js",
+    "Nuxt",
+    "Django",
+    "Flask",
+    "FastAPI",
+    "Rails",
+    "Spring",
+    "GraphQL",
+    "REST",
+    "gRPC",
+    "tRPC",
     # Cloud / infra
-    "AWS", "Azure", "GCP", "Google Cloud", "Kubernetes", "Docker", "Terraform",
-    "Datadog", "New Relic", "Prometheus", "Grafana", "ELK", "ElasticSearch", "OpenSearch",
+    "AWS",
+    "Azure",
+    "GCP",
+    "Google Cloud",
+    "Kubernetes",
+    "Docker",
+    "Terraform",
+    "Datadog",
+    "New Relic",
+    "Prometheus",
+    "Grafana",
+    "ELK",
+    "ElasticSearch",
+    "OpenSearch",
     # Data
-    "PostgreSQL", "Postgres", "MySQL", "MongoDB", "Redis", "Snowflake", "BigQuery",
-    "Redshift", "Kafka", "Spark", "dbt", "Looker", "Tableau", "Power BI", "Databricks",
+    "PostgreSQL",
+    "Postgres",
+    "MySQL",
+    "MongoDB",
+    "Redis",
+    "Snowflake",
+    "BigQuery",
+    "Redshift",
+    "Kafka",
+    "Spark",
+    "dbt",
+    "Looker",
+    "Tableau",
+    "Power BI",
+    "Databricks",
     # Business tools
-    "Salesforce", "HubSpot", "Zendesk", "Jira", "Confluence", "Figma", "Amplitude",
-    "Mixpanel", "Segment", "GA4", "Google Analytics", "Intercom", "Pendo",
+    "Salesforce",
+    "HubSpot",
+    "Zendesk",
+    "Jira",
+    "Confluence",
+    "Figma",
+    "Amplitude",
+    "Mixpanel",
+    "Segment",
+    "GA4",
+    "Google Analytics",
+    "Intercom",
+    "Pendo",
     # AI / ML
-    r"OpenAI", "Anthropic", "Claude", r"GPT-?\d*", "LLM", "LLMOps", "LangChain",
-    "LlamaIndex", "RAG", "vector database", "Pinecone", "Weaviate", "Chroma", "Qdrant",
+    r"OpenAI",
+    "Anthropic",
+    "Claude",
+    r"GPT-?\d*",
+    "LLM",
+    "LLMOps",
+    "LangChain",
+    "LlamaIndex",
+    "RAG",
+    "vector database",
+    "Pinecone",
+    "Weaviate",
+    "Chroma",
+    "Qdrant",
     # Enterprise
-    "SAP", "Workday", "NetSuite", "Oracle", "Stripe", "Twilio", "SendGrid", "Snowplow",
-    "ATS", "CRM", "CMS", "ERP",
+    "SAP",
+    "Workday",
+    "NetSuite",
+    "Oracle",
+    "Stripe",
+    "Twilio",
+    "SendGrid",
+    "Snowplow",
+    "ATS",
+    "CRM",
+    "CMS",
+    "ERP",
     # DevOps / VCS
-    "GitHub Actions", "GitHub", "GitLab", "Bitbucket", "Jenkins", "CircleCI",
-    "ArgoCD", "Helm", "Ansible",
+    "GitHub Actions",
+    "GitHub",
+    "GitLab",
+    "Bitbucket",
+    "Jenkins",
+    "CircleCI",
+    "ArgoCD",
+    "Helm",
+    "Ansible",
     # Productivity
-    r"Monday\.com", "Notion", "Slack", "Linear", "Asana", "ClickUp", "Miro",
-    "Productboard", r"Aha!",
+    r"Monday\.com",
+    "Notion",
+    "Slack",
+    "Linear",
+    "Asana",
+    "ClickUp",
+    "Miro",
+    "Productboard",
+    r"Aha!",
 ]
 
 # Longer alternatives must come before shorter prefixes (e.g. "GitHub Actions" before "GitHub")
@@ -155,6 +310,7 @@ _COMP_CONTEXT_RE = re.compile(
 # ---------------------------------------------------------------------------
 # Low-level text helpers
 # ---------------------------------------------------------------------------
+
 
 def _normalize_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
@@ -222,6 +378,7 @@ def extract_tools(text: str, limit: int = 40) -> list[str]:
 # CandidateModel — deterministic parse, no LLM
 # ---------------------------------------------------------------------------
 
+
 def _yaml_safe_load(text: str) -> dict:
     """Parse YAML with graceful fallback to empty dict."""
     if not _YAML_AVAILABLE:
@@ -271,12 +428,29 @@ def _extract_work_authorization(data: dict, raw_text: str) -> dict:
         raw_visa = raw_text.lower()
 
     needs_sponsorship = None
-    if any(phrase in raw_visa for phrase in ("no sponsorship", "does not require", "not require", "citizen", "green card", "permanent resident", "ead")):
+    if any(
+        phrase in raw_visa
+        for phrase in (
+            "no sponsorship",
+            "does not require",
+            "not require",
+            "citizen",
+            "green card",
+            "permanent resident",
+            "ead",
+        )
+    ):
         needs_sponsorship = False
-    elif any(phrase in raw_visa for phrase in ("requires sponsorship", "need sponsorship", "h1b", "h-1b", "visa required")):
+    elif any(
+        phrase in raw_visa
+        for phrase in ("requires sponsorship", "need sponsorship", "h1b", "h-1b", "visa required")
+    ):
         needs_sponsorship = True
 
-    return {"needs_sponsorship": needs_sponsorship, "raw": raw_visa[:120] if raw_visa != raw_text.lower() else ""}
+    return {
+        "needs_sponsorship": needs_sponsorship,
+        "raw": raw_visa[:120] if raw_visa != raw_text.lower() else "",
+    }
 
 
 def _extract_target_roles(data: dict) -> dict:
@@ -291,11 +465,13 @@ def _extract_target_roles(data: dict) -> dict:
     for a in archetypes_raw:
         if not isinstance(a, dict):
             continue
-        archetypes.append({
-            "name": str(a.get("name") or ""),
-            "level": str(a.get("level") or ""),
-            "fit": str(a.get("fit") or "primary"),
-        })
+        archetypes.append(
+            {
+                "name": str(a.get("name") or ""),
+                "level": str(a.get("level") or ""),
+                "fit": str(a.get("fit") or "primary"),
+            }
+        )
 
     # Non-target indicators
     filters = data.get("job_filters") or {}
@@ -320,7 +496,9 @@ def _extract_compensation_preferences(data: dict) -> dict:
 
 def _extract_workplace_preferences(data: dict, raw_text: str) -> dict:
     candidate = data.get("candidate") or {}
-    raw_pref = str(candidate.get("location_flexibility") or candidate.get("workplace_preference") or "").lower()
+    raw_pref = str(
+        candidate.get("location_flexibility") or candidate.get("workplace_preference") or ""
+    ).lower()
     if not raw_pref:
         raw_pref = raw_text.lower()
 
@@ -388,7 +566,9 @@ def build_candidate_model(profile_data: dict[str, str]) -> dict:
             country_code = "US"
 
     candidate_countries = [country_code] if country_code else []
-    candidate_regions = [city_region] if city_region and len(city_region) == 2 and city_region in US_STATE_CODES else []
+    candidate_regions = (
+        [city_region] if city_region and len(city_region) == 2 and city_region in US_STATE_CODES else []
+    )
 
     # --- Work authorization ---
     work_auth = _extract_work_authorization(yaml_data, profile_yml_text)
@@ -449,6 +629,7 @@ def build_candidate_model(profile_data: dict[str, str]) -> dict:
 # JobModel — structured JD pre-extraction
 # ---------------------------------------------------------------------------
 
+
 def _is_comp_context_line(line: str) -> bool:
     """True if a line is primarily about compensation, not work location."""
     return bool(_COMP_CONTEXT_RE.search(line))
@@ -463,9 +644,23 @@ def _extract_location_lines(text: str) -> list[str]:
             continue
         lowered = line.lower()
         # Must mention a location/remote signal
-        if not any(t in lowered for t in ("location", "remote", "hybrid", "on-site", "onsite",
-                                           "eligible", "not available", "not eligible", "country",
-                                           "region", "office", "telecommute")):
+        if not any(
+            t in lowered
+            for t in (
+                "location",
+                "remote",
+                "hybrid",
+                "on-site",
+                "onsite",
+                "eligible",
+                "not available",
+                "not eligible",
+                "country",
+                "region",
+                "office",
+                "telecommute",
+            )
+        ):
             continue
         # Skip lines that are clearly about compensation ranges
         if _is_comp_context_line(line):
@@ -642,6 +837,7 @@ def build_job_model(jd_text: str, parsed_metadata: dict | None = None) -> dict:
 # Matching guardrails — operate on CandidateModel + JobModel
 # ---------------------------------------------------------------------------
 
+
 def evaluate_location_compatibility(candidate: dict, job: dict) -> dict:
     """
     Deterministic location compatibility check.
@@ -691,7 +887,12 @@ def evaluate_location_compatibility(candidate: dict, job: dict) -> dict:
         }
 
     # Rule 4: fully remote, no geo constraint
-    if workplace_type == "remote" and not eligible_countries and not eligible_regions and not excluded_regions:
+    if (
+        workplace_type == "remote"
+        and not eligible_countries
+        and not eligible_regions
+        and not excluded_regions
+    ):
         return {
             "status": "unknown",
             "reason": "Remote role with no explicit geographic eligibility constraint.",
@@ -740,6 +941,7 @@ def match_tools(jd_tools: list[str], candidate_tools: list[str]) -> list[dict]:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def build_match_context(jd_text: str, profile_text: str, parsed_metadata: dict | None = None) -> dict:
     """
     Main entry point. Accepts raw JD text + combined profile text.
@@ -755,11 +957,18 @@ def build_match_context(jd_text: str, profile_text: str, parsed_metadata: dict |
         "profile.yml": sections.get("identity (profile.yml)", sections.get("identity", "")),
         "portals.yml": sections.get("target keywords (portals.yml)", sections.get("target keywords", "")),
         "cv.md": sections.get("experience (cv.md)", sections.get("experience", "")),
-        "_profile.md": sections.get("application strategy (_profile.md)", sections.get("application strategy", "")),
+        "_profile.md": sections.get(
+            "application strategy (_profile.md)", sections.get("application strategy", "")
+        ),
     }
     # If sections are empty (profile_text passed as raw combined text), use the full text
     if not any(profile_data.values()):
-        profile_data = {"profile.yml": profile_text, "portals.yml": "", "cv.md": profile_text, "_profile.md": ""}
+        profile_data = {
+            "profile.yml": profile_text,
+            "portals.yml": "",
+            "cv.md": profile_text,
+            "_profile.md": "",
+        }
 
     candidate = build_candidate_model(profile_data)
     job = build_job_model(jd_text, parsed_metadata)
@@ -809,6 +1018,7 @@ def format_match_context(match_context: dict) -> str:
 # Profile text builder (used by both analyzers)
 # ---------------------------------------------------------------------------
 
+
 def build_profile_text(profile_data: dict[str, str]) -> str:
     """Combine profile file contents into a single labelled text block for LLM system prompts."""
     return (
@@ -823,6 +1033,7 @@ def build_profile_text(profile_data: dict[str, str]) -> str:
 # Legacy compatibility shim (used by job_post_parser.py)
 # ---------------------------------------------------------------------------
 
+
 def extract_candidate_facts(profile_text: str) -> dict:
     """Legacy shim — returns minimal facts dict from combined profile text."""
     sections = _profile_sections(profile_text)
@@ -836,6 +1047,8 @@ def extract_candidate_facts(profile_text: str) -> dict:
     return {
         "countries": model["countries"],
         "regions": model["regions"],
-        "remote_preference": "remote" if "remote" in model["workplace_preferences"]["preferred_types"] else None,
+        "remote_preference": (
+            "remote" if "remote" in model["workplace_preferences"]["preferred_types"] else None
+        ),
         "tools": model["tools"],
     }
