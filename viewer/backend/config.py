@@ -6,14 +6,11 @@ STATE_DIR = os.environ.get("STATE_DIR", str(Path(CATALOG_DB).parent))
 MATCH_RUNS_DIR = os.environ.get("MATCH_RUNS_DIR", str(Path(STATE_DIR) / "match-runs"))
 ANALYSIS_CACHE_PATH = os.environ.get("ANALYSIS_CACHE_PATH", str(Path(STATE_DIR) / "job-analysis-cache.json"))
 
-NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY")
 NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "meta/llama-4-maverick-17b-128e-instruct")
 NVIDIA_ENSEMBLE_SCORERS = os.environ.get("NVIDIA_ENSEMBLE_SCORERS")
 NVIDIA_ENSEMBLE_SYNTHESIZER = os.environ.get("NVIDIA_ENSEMBLE_SYNTHESIZER")
 
-MATCHER_DIR = os.environ.get("MATCHER_DIR", "/matcher")
-PYTHON_BIN = os.environ.get("PYTHON_BIN", "python3")
-CAREER_OPS_DIR = os.environ.get("CAREER_OPS_DIR", "career-ops")
+MATCHER_SERVICE_URL = os.environ.get("MATCHER_SERVICE_URL", "http://matcher:8001")
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 SCORE_NOTIFY_MIN_SCORE = int(os.environ.get("SCORE_NOTIFY_MIN_SCORE", "4"))

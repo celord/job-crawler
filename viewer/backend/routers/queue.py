@@ -7,8 +7,8 @@ from services import queue_store
 from services.match_run import (
     STATUS_FAILED,
     STATUS_RUNNING,
+    cancel_run,
     execute_match_run_from_input,
-    kill_run,
     read_input_lines,
     read_manifest,
     write_manifest,
@@ -68,7 +68,7 @@ async def stop_queue_item(item_id: str) -> dict:
     item = await _find_item(item_id)
 
     run_id = queue_store.run_id_from_item_id(item_id)
-    kill_run(run_id)
+    await cancel_run(run_id)
 
     now = _now_iso()
     item = {
@@ -95,7 +95,7 @@ async def restart_queue_item(item_id: str) -> dict:
     item = await _find_item(item_id)
 
     run_id = queue_store.run_id_from_item_id(item_id)
-    kill_run(run_id)
+    await cancel_run(run_id)
 
     now = _now_iso()
     item = {

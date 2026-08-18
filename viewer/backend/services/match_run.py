@@ -11,14 +11,12 @@ import aiofiles
 
 import config
 from db import execute
-from services import queue_store
+from services import matcher_client, queue_store
 from services.analysis import persist_run_results
 from services.company import company_name, is_real_compensation, sanitize_job
 from services.notifications import notify_discord_for_score
 
 logger = logging.getLogger(__name__)
-
-PARSE_CONCURRENCY = 6
 
 STATUS_PENDING = "pending"
 STATUS_RUNNING = "running"
@@ -26,7 +24,6 @@ STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 
 active_run_ids: set[str] = set()
-active_run_processes: dict[str, "asyncio.subprocess.Process"] = {}
 
 _RUN_ID_SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
 
@@ -118,24 +115,6 @@ async def append_match_run_log(run_id: str, message: str, stream: str = "stderr"
         logger.info(rendered)
     async with aiofiles.open(match_run_log_path(run_id), "a", encoding="utf-8") as f:
         await f.write(rendered + "\n")
-
-
-async def parse_job_post(url: str) -> dict:
-    script = str(Path(config.MATCHER_DIR) / "job_post_parser.py")
-    proc = await asyncio.create_subprocess_exec(
-        config.PYTHON_BIN,
-        script,
-        "--url",
-        url,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        stdin=asyncio.subprocess.DEVNULL,
-    )
-    stdout, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        message = stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(message or f"job_post_parser.py exited with code {proc.returncode}")
-    return json.loads(stdout.decode("utf-8"))
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -235,44 +214,6 @@ def build_jd_text(parsed: dict, job: dict) -> str:
     return "\n\n".join(sections)
 
 
-async def _parse_one(sem: asyncio.Semaphore, run_id: str, job: dict) -> tuple[dict, str | None]:
-    job_label = f"{company_name(job)} | {job.get('title') or job.get('job_id')}"
-
-    cached_parsed = None
-    parsed_jd_raw = job.get("parsed_jd")
-    if parsed_jd_raw:
-        try:
-            cached_parsed = json.loads(parsed_jd_raw)
-        except (TypeError, ValueError):
-            cached_parsed = None
-
-    async with sem:
-        if cached_parsed is not None:
-            await append_match_run_log(run_id, f"[parse] {job_label} | cached")
-            return cached_parsed, None
-
-        job_url = job.get("job_url")
-        if not job_url:
-            await append_match_run_log(run_id, f"[parse] {job_label} | failed | Missing job URL")
-            return {}, "Missing job URL"
-
-        await append_match_run_log(run_id, f"[parse] {job_label} | start | url={job_url}")
-        try:
-            parsed = await parse_job_post(job_url)
-        except Exception as exc:
-            parse_error = str(exc)
-            await append_match_run_log(run_id, f"[parse] {job_label} | failed | {parse_error}")
-            return {}, parse_error
-
-        await append_match_run_log(
-            run_id,
-            f"[parse] {job_label} | success | provider={parsed.get('provider', job.get('provider'))} "
-            f"title={parsed.get('title') or job.get('title') or 'n/a'}",
-        )
-        await persist_parsed_metadata(job, parsed)
-        return parsed, None
-
-
 def _build_input_line(job: dict, parsed: dict, parse_error: str | None) -> str:
     line = {
         **sanitize_job(job),
@@ -312,12 +253,67 @@ async def write_batch_input(run_id: str, jobs: list[dict], manifest: dict) -> di
     async with aiofiles.open(match_run_log_path(run_id), "w", encoding="utf-8"):
         pass  # reset the log file for this run
 
-    sem = asyncio.Semaphore(PARSE_CONCURRENCY)
-    results = await asyncio.gather(*(_parse_one(sem, run_id, job) for job in jobs))
+    cached_by_idx: dict[int, dict] = {}
+    parse_error_by_idx: dict[int, str] = {}
+    to_parse: list[tuple[int, dict]] = []
+
+    for idx, job in enumerate(jobs):
+        parsed_jd_raw = job.get("parsed_jd")
+        if parsed_jd_raw:
+            try:
+                cached_by_idx[idx] = json.loads(parsed_jd_raw)
+                continue
+            except (TypeError, ValueError):
+                pass
+        job_url = job.get("job_url")
+        if not job_url:
+            parse_error_by_idx[idx] = "Missing job URL"
+            continue
+        to_parse.append((idx, job))
+
+    parsed_by_idx: dict[int, dict] = {}
+    if to_parse:
+        urls = [job.get("job_url") for _, job in to_parse]
+        await append_match_run_log(run_id, f"[parse] batch start | count={len(urls)}")
+        try:
+            batch_results = await matcher_client.parse_batch(urls)
+        except Exception as exc:
+            await append_match_run_log(run_id, f"[parse] batch failed | {exc}")
+            batch_results = []
+
+        results_by_url = {r.get("url"): r for r in batch_results}
+        for idx, job in to_parse:
+            job_label = f"{company_name(job)} | {job.get('title') or job.get('job_id')}"
+            result = results_by_url.get(job.get("job_url"))
+            if result is None:
+                parse_error_by_idx[idx] = "No parse result returned"
+                await append_match_run_log(run_id, f"[parse] {job_label} | failed | no parse result returned")
+                continue
+            if result.get("parse_error"):
+                parse_error_by_idx[idx] = result["parse_error"]
+                await append_match_run_log(run_id, f"[parse] {job_label} | failed | {result['parse_error']}")
+                continue
+            parsed = result.get("parsed") or {}
+            parsed_by_idx[idx] = parsed
+            await append_match_run_log(
+                run_id,
+                f"[parse] {job_label} | success | provider={parsed.get('provider', job.get('provider'))} "
+                f"title={parsed.get('title') or job.get('title') or 'n/a'}",
+            )
+            await persist_parsed_metadata(job, parsed)
 
     parsed_count = 0
     lines: list[str] = []
-    for job, (parsed, parse_error) in zip(jobs, results):
+    for idx, job in enumerate(jobs):
+        if idx in cached_by_idx:
+            job_label = f"{company_name(job)} | {job.get('title') or job.get('job_id')}"
+            await append_match_run_log(run_id, f"[parse] {job_label} | cached")
+            parsed, parse_error = cached_by_idx[idx], None
+        elif idx in parsed_by_idx:
+            parsed, parse_error = parsed_by_idx[idx], None
+        else:
+            parsed, parse_error = {}, parse_error_by_idx.get(idx, "Unknown parse failure")
+
         if not parse_error:
             parsed_count += 1
         lines.append(_build_input_line(job, parsed, parse_error))
@@ -355,163 +351,19 @@ async def read_results_jsonl(run_id: str) -> list[dict]:
     return results
 
 
-def kill_run(run_id: str) -> bool:
-    proc = active_run_processes.get(run_id)
-    if proc is None:
-        return False
-    proc.terminate()
-    active_run_processes.pop(run_id, None)
-    return True
-
-
-def _scorer_subtask_id(model_name: str) -> str | None:
-    name = model_name.lower()
-    if "maverick" in name:
-        return "scorer:maverick"
-    if "kimi" in name:
-        return "scorer:kimi"
-    if "nemotron" in name:
-        return "scorer:nemotron"
-    return None
-
-
-_START_RE = re.compile(r"\|\s*start\b", re.IGNORECASE)
-_SCORER_DONE_RE = re.compile(r"\|\s*scorer\s+([\w\-./]+)\s*\|\s*avg=", re.IGNORECASE)
-_SCORER_ERR_RE = re.compile(r"\|\s*scorer\s+([\w\-./]+)\s*\|\s*error[:\s]", re.IGNORECASE)
-_SYNTH_RUNNING_RE = re.compile(r"\|\s*synthesizing", re.IGNORECASE)
-_SYNTH_DONE_RE = re.compile(r"\|\s*synthesis done", re.IGNORECASE)
-
-
-def _job_label_pattern(label: str) -> re.Pattern:
-    escaped = re.escape(label)
-    return re.compile(rf"\[ensemble(?:-batch)?\]\s+(?:#\d+\s+)?{escaped}\s+\|", re.IGNORECASE)
-
-
-def _apply_log_line_to_item(item: dict, label_re: re.Pattern, line: str) -> bool:
-    """Mutates `item` in place (subtask dicts included) so the caller's own
-    reference to `item` stays in sync — it is reused after the scorer phase
-    completes to mark the discord subtask."""
-    if not label_re.search(line):
-        return False
-
-    now = _now_iso()
-
-    def _patch_subtasks(predicate, **patch) -> bool:
-        changed = False
-        for subtask in item["subtasks"]:
-            if predicate(subtask):
-                subtask.update(patch)
-                changed = True
-        return changed
-
-    if _START_RE.search(line):
-        changed = _patch_subtasks(
-            lambda s: s["id"].startswith("scorer:") or s["id"] == "model:claude",
-            status="running",
-            started_at=now,
-        )
-        if changed:
-            item["status"] = "running"
-            item["updated_at"] = now
-        return changed
-
-    match = _SCORER_DONE_RE.search(line)
-    if match:
-        subtask_id = _scorer_subtask_id(match.group(1))
-        if subtask_id is None:
-            return False
-        changed = _patch_subtasks(lambda s: s["id"] == subtask_id, status="done", finished_at=now)
-        if changed:
-            item["updated_at"] = now
-        return changed
-
-    match = _SCORER_ERR_RE.search(line)
-    if match:
-        subtask_id = _scorer_subtask_id(match.group(1))
-        if subtask_id is None:
-            return False
-        changed = _patch_subtasks(lambda s: s["id"] == subtask_id, status="error", finished_at=now)
-        if changed:
-            item["updated_at"] = now
-        return changed
-
-    if _SYNTH_RUNNING_RE.search(line):
-        changed = _patch_subtasks(lambda s: s["id"] == "synthesis", status="running", started_at=now)
-        if changed:
-            item["updated_at"] = now
-        return changed
-
-    if _SYNTH_DONE_RE.search(line):
-        changed = _patch_subtasks(lambda s: s["id"] == "synthesis", status="done", finished_at=now)
-        if changed:
-            item["updated_at"] = now
-        return changed
-
-    return False
-
-
-async def run_scorer_phase(run_id: str, mode: str, queue_items: list[dict]) -> list[dict]:
-    is_ensemble = mode == "claude-ensemble"
-    script = "ensemble_runner.py" if is_ensemble else "job_fit_analyzer.py"
-    pipeline_tag = "claude-ensemble" if is_ensemble else "claude"
-
-    labeled_items = [
-        (item, _job_label_pattern(f"{item.get('company', '')} | {item.get('title', '')}"))
-        for item in queue_items
-    ]
-
-    proc = await asyncio.create_subprocess_exec(
-        config.PYTHON_BIN,
-        str(Path(config.MATCHER_DIR) / script),
-        "--jobs-jsonl",
-        str(match_run_input_path(run_id)),
-        "--results-jsonl",
-        str(match_run_results_path(run_id)),
-        "--profile-dir",
-        str(Path(config.MATCHER_DIR) / config.CAREER_OPS_DIR),
-        "--pipeline",
-        pipeline_tag,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        stdin=asyncio.subprocess.DEVNULL,
-    )
-    active_run_processes[run_id] = proc
-
-    async def _drain_stdout() -> None:
-        assert proc.stdout is not None
-        async for _ in proc.stdout:
-            pass
-
-    async def _drain_stderr() -> None:
-        assert proc.stderr is not None
-        async for raw_line in proc.stderr:
-            line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
-            if not line:
-                continue
-            await append_match_run_log(run_id, line, stream="stderr")
-            for item, label_re in labeled_items:
-                if _apply_log_line_to_item(item, label_re, line):
-                    await queue_store.upsert_queue_item(item)
-
-    try:
-        await asyncio.gather(_drain_stdout(), _drain_stderr())
-        returncode = await proc.wait()
-    finally:
-        active_run_processes.pop(run_id, None)
-
-    if returncode != 0:
-        raise RuntimeError(f"{script} exited with code {returncode}")
-
-    results = await read_results_jsonl(run_id)
-    if results and all(r.get("status") == "error" for r in results):
-        first_error = results[0].get("error")
-        raise RuntimeError(first_error or "All jobs failed in Python pipeline")
-
-    return results
+async def cancel_run(run_id: str) -> bool:
+    return await matcher_client.cancel_run(run_id)
 
 
 def _new_queue_item(run_id: str, job: dict, mode: str, existing: dict | None, now: str) -> dict:
     job_key = f"{job.get('provider', '')}|{job.get('source_key', '')}|{job.get('job_id', '')}"
+    subtasks = queue_store.build_subtasks(mode)
+    # Parsing already ran (in write_batch_input, or was skipped entirely for
+    # the with-jd path) by the time a queue item exists, so its subtask
+    # starts in its resolved state rather than "todo" -> "running" -> "done".
+    for subtask in subtasks:
+        if subtask["id"] == "parse":
+            subtask.update(status="done", started_at=now, finished_at=now)
     return {
         "id": f"{run_id}:{job_key}",
         "job_key": job_key,
@@ -519,7 +371,7 @@ def _new_queue_item(run_id: str, job: dict, mode: str, existing: dict | None, no
         "company": job.get("company") or company_name(job),
         "mode": mode,
         "status": "running",
-        "subtasks": queue_store.build_subtasks(mode),
+        "subtasks": subtasks,
         "attempt": existing["attempt"] if existing else 1,
         "max_attempts": existing["max_attempts"] if existing else 3,
         "next_retry_at": None,
@@ -528,6 +380,61 @@ def _new_queue_item(run_id: str, job: dict, mode: str, existing: dict | None, no
         "error": None,
         "score": existing.get("score") if existing else None,
     }
+
+
+async def run_scorer_phase(run_id: str, mode: str, queue_items: list[dict]) -> list[dict]:
+    jobs: list[dict] = []
+    for line in await read_input_lines(run_id):
+        try:
+            jobs.append(json.loads(line))
+        except ValueError:
+            continue
+
+    running_at = _now_iso()
+    for item in queue_items:
+        item["subtasks"] = [
+            {**s, "status": "running", "started_at": running_at} if s["id"] == "score" else s
+            for s in item["subtasks"]
+        ]
+        item["updated_at"] = running_at
+        await queue_store.upsert_queue_item(item)
+
+    await append_match_run_log(run_id, f"[score] start | mode={mode} count={len(jobs)}")
+    try:
+        results = await matcher_client.analyze(mode, jobs, run_id)
+    except Exception as exc:
+        await append_match_run_log(run_id, f"[score] failed | {exc}")
+        raise RuntimeError(str(exc)) from exc
+
+    for row in results:
+        # The matcher tags analysis.pipeline with its own model-agnostic
+        # convention ("maverick"/"ensemble"); relabel to the viewer's own
+        # mode-based convention ("claude"/"claude-ensemble") that
+        # persist_run_results, the analysis cache, and the frontend expect —
+        # mirroring what the old subprocess's --pipeline flag used to do.
+        if row.get("status") == "ok" and isinstance(row.get("analysis"), dict):
+            row["analysis"]["pipeline"] = mode
+
+    if results and all(r.get("status") == "error" for r in results):
+        first_error = results[0].get("error")
+        raise RuntimeError(first_error or "All jobs failed in matcher pipeline")
+
+    async with aiofiles.open(match_run_results_path(run_id), "w", encoding="utf-8") as f:
+        for row in results:
+            await f.write(json.dumps(row) + "\n")
+
+    finished_at = _now_iso()
+    ok_count = len([r for r in results if r.get("status") == "ok"])
+    for item in queue_items:
+        item["subtasks"] = [
+            {**s, "status": "done", "finished_at": finished_at} if s["id"] == "score" else s
+            for s in item["subtasks"]
+        ]
+        item["updated_at"] = finished_at
+        await queue_store.upsert_queue_item(item)
+
+    await append_match_run_log(run_id, f"[score] done | ok={ok_count} total={len(results)}")
+    return results
 
 
 async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list[dict], mode: str) -> None:

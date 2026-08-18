@@ -4,7 +4,7 @@ import re
 import pytest
 
 from services import match_run as mr
-from services import queue_store
+from services import matcher_client, queue_store
 from tests.conftest import insert_job
 
 pytestmark = pytest.mark.usefixtures("isolated_env")
@@ -161,130 +161,29 @@ async def test_read_results_jsonl_skips_malformed_lines(isolated_env):
     assert results == [{"a": 1}, {"b": 2}]
 
 
-def test_kill_run_no_active_process_returns_false():
-    assert mr.kill_run("nope") is False
+async def test_cancel_run_delegates_to_matcher_client(monkeypatch):
+    calls = []
+
+    async def fake_cancel(run_id):
+        calls.append(run_id)
+        return True
+
+    monkeypatch.setattr(matcher_client, "cancel_run", fake_cancel)
+    assert await mr.cancel_run("run_1") is True
+    assert calls == ["run_1"]
 
 
-def test_scorer_subtask_id_matching():
-    assert mr._scorer_subtask_id("llama-4-maverick-17b") == "scorer:maverick"
-    assert mr._scorer_subtask_id("kimi-k2.6") == "scorer:kimi"
-    assert mr._scorer_subtask_id("nemotron-super-49b") == "scorer:nemotron"
-    assert mr._scorer_subtask_id("unknown-model") is None
+# --- HTTP-backed integration tests (matcher_client mocked at the network
+# boundary) --------------------------------------------------------------
 
 
-def test_apply_log_line_to_item_start_marks_scorers_running():
-    item = {
-        "id": "x",
-        "status": "running",
-        "subtasks": queue_store.build_subtasks("claude-ensemble"),
-    }
-    label_re = mr._job_label_pattern("acme | Backend Engineer")
-    changed = mr._apply_log_line_to_item(item, label_re, "[ensemble] acme | Backend Engineer | start")
-    assert changed is True
-    scorer = next(s for s in item["subtasks"] if s["id"] == "scorer:maverick")
-    assert scorer["status"] == "running"
+async def test_write_batch_input_skips_cached_and_missing_url(isolated_env, monkeypatch):
+    async def fake_parse_batch(urls):
+        assert urls == ["https://example.com/ok"] * 3
+        return [{"url": u, "parsed": {"title": "Parsed Title"}, "parse_error": None} for u in urls]
 
+    monkeypatch.setattr(matcher_client, "parse_batch", fake_parse_batch)
 
-def test_apply_log_line_to_item_ignores_other_jobs():
-    item = {"id": "x", "status": "running", "subtasks": queue_store.build_subtasks("claude-ensemble")}
-    label_re = mr._job_label_pattern("acme | Backend Engineer")
-    changed = mr._apply_log_line_to_item(item, label_re, "[ensemble] other | Other Job | start")
-    assert changed is False
-
-
-def test_apply_log_line_to_item_scorer_done_and_error():
-    item = {"id": "x", "status": "running", "subtasks": queue_store.build_subtasks("claude-ensemble")}
-    label_re = mr._job_label_pattern("acme | Backend Engineer")
-    mr._apply_log_line_to_item(
-        item, label_re, "[ensemble] acme | Backend Engineer | scorer maverick | avg=4.2"
-    )
-    maverick = next(s for s in item["subtasks"] if s["id"] == "scorer:maverick")
-    assert maverick["status"] == "done"
-
-    mr._apply_log_line_to_item(
-        item, label_re, "[ensemble] acme | Backend Engineer | scorer kimi | error: boom"
-    )
-    kimi = next(s for s in item["subtasks"] if s["id"] == "scorer:kimi")
-    assert kimi["status"] == "error"
-
-
-def test_apply_log_line_to_item_synthesis_running_and_done():
-    item = {"id": "x", "status": "running", "subtasks": queue_store.build_subtasks("claude-ensemble")}
-    label_re = mr._job_label_pattern("acme | Backend Engineer")
-    mr._apply_log_line_to_item(item, label_re, "[ensemble] acme | Backend Engineer | synthesizing")
-    assert next(s for s in item["subtasks"] if s["id"] == "synthesis")["status"] == "running"
-    mr._apply_log_line_to_item(item, label_re, "[ensemble] acme | Backend Engineer | synthesis done")
-    assert next(s for s in item["subtasks"] if s["id"] == "synthesis")["status"] == "done"
-
-
-# --- Subprocess-backed integration tests -----------------------------------
-
-PARSER_SCRIPT = """
-import argparse, json, sys
-p = argparse.ArgumentParser()
-p.add_argument("--url", required=True)
-args = p.parse_args()
-if "fail" in args.url:
-    print("boom", file=sys.stderr)
-    sys.exit(1)
-print(json.dumps({"title": "Parsed Title", "location": "Remote", "provider": "greenhouse"}))
-"""
-
-ENSEMBLE_SCRIPT = """
-import argparse, json, sys
-p = argparse.ArgumentParser()
-p.add_argument("--jobs-jsonl", required=True)
-p.add_argument("--results-jsonl", required=True)
-p.add_argument("--profile-dir", required=True)
-p.add_argument("--pipeline", required=True)
-args = p.parse_args()
-with open(args.jobs_jsonl) as f:
-    jobs = [json.loads(l) for l in f.read().splitlines() if l.strip()]
-results = []
-for job in jobs:
-    label = f"{job['company']} | {job['title']}"
-    print(f"[ensemble] {label} | start", file=sys.stderr, flush=True)
-    print(f"[ensemble] {label} | scorer maverick | avg=4.5", file=sys.stderr, flush=True)
-    print(f"[ensemble] {label} | scorer kimi | avg=4.3", file=sys.stderr, flush=True)
-    print(f"[ensemble] {label} | scorer nemotron | avg=4.6", file=sys.stderr, flush=True)
-    print(f"[ensemble] {label} | synthesizing", file=sys.stderr, flush=True)
-    print(f"[ensemble] {label} | synthesis done", file=sys.stderr, flush=True)
-    if job.get("_force_error"):
-        results.append({
-            "status": "error", "provider": job["provider"], "source_key": job["source_key"],
-            "job_id": job["job_id"], "error": "forced failure",
-        })
-    else:
-        results.append({
-            "status": "ok", "provider": job["provider"], "source_key": job["source_key"],
-            "job_id": job["job_id"], "analysis": {"score_5": 4.5, "pipeline": "claude-ensemble"},
-        })
-with open(args.results_jsonl, "w") as f:
-    for r in results:
-        f.write(json.dumps(r) + "\\n")
-"""
-
-
-@pytest.fixture
-def fake_matcher_scripts(migrated_env):
-    matcher_dir = migrated_env["matcher_dir"]
-    (matcher_dir / "job_post_parser.py").write_text(PARSER_SCRIPT)
-    (matcher_dir / "ensemble_runner.py").write_text(ENSEMBLE_SCRIPT)
-    (matcher_dir / "job_fit_analyzer.py").write_text(ENSEMBLE_SCRIPT)
-    return migrated_env
-
-
-async def test_parse_job_post_success(fake_matcher_scripts):
-    parsed = await mr.parse_job_post("https://example.com/ok")
-    assert parsed["title"] == "Parsed Title"
-
-
-async def test_parse_job_post_failure_raises(fake_matcher_scripts):
-    with pytest.raises(RuntimeError, match="boom"):
-        await mr.parse_job_post("https://example.com/fail")
-
-
-async def test_write_batch_input_caps_concurrency_and_skips_cached(fake_matcher_scripts, isolated_env):
     jobs = [
         {
             "provider": "gh",
@@ -320,12 +219,57 @@ async def test_write_batch_input_caps_concurrency_and_skips_cached(fake_matcher_
     assert cached["title"] == "Already parsed"
 
 
-async def test_run_scorer_phase_success(fake_matcher_scripts, isolated_env):
+async def test_write_batch_input_surfaces_matcher_parse_error(isolated_env, monkeypatch):
+    async def fake_parse_batch(urls):
+        return [{"url": urls[0], "parsed": None, "parse_error": "Unsupported provider"}]
+
+    monkeypatch.setattr(matcher_client, "parse_batch", fake_parse_batch)
+
+    jobs = [{"provider": "gh", "source_key": "acme", "job_id": "1", "job_url": "https://example.com/fail"}]
+    mr.match_run_dir("run_1").mkdir(parents=True, exist_ok=True)
+    manifest = await mr.write_batch_input("run_1", jobs, {"id": "run_1"})
+    assert manifest["parsed_count"] == 0
+
+    line = json.loads(mr.match_run_input_path("run_1").read_text().splitlines()[0])
+    assert line["parse_error"] == "Unsupported provider"
+
+
+async def test_write_batch_input_handles_matcher_call_failure(isolated_env, monkeypatch):
+    async def failing_parse_batch(urls):
+        raise RuntimeError("matcher unreachable")
+
+    monkeypatch.setattr(matcher_client, "parse_batch", failing_parse_batch)
+
+    jobs = [{"provider": "gh", "source_key": "acme", "job_id": "1", "job_url": "https://example.com/x"}]
+    mr.match_run_dir("run_1").mkdir(parents=True, exist_ok=True)
+    manifest = await mr.write_batch_input("run_1", jobs, {"id": "run_1"})
+    assert manifest["parsed_count"] == 0
+
+    line = json.loads(mr.match_run_input_path("run_1").read_text().splitlines()[0])
+    assert line["parse_error"] == "No parse result returned"
+
+
+async def test_run_scorer_phase_success_relabels_pipeline(isolated_env, monkeypatch):
     mr.match_run_input_path("run_1").parent.mkdir(parents=True, exist_ok=True)
     job_line = json.dumps(
         {"provider": "gh", "source_key": "acme", "job_id": "1", "title": "Backend", "company": "acme"}
     )
     mr.match_run_input_path("run_1").write_text(job_line + "\n")
+
+    async def fake_analyze(mode, jobs, run_id):
+        assert mode == "claude-ensemble"
+        assert run_id == "run_1"
+        return [
+            {
+                "status": "ok",
+                "provider": "gh",
+                "source_key": "acme",
+                "job_id": "1",
+                "analysis": {"score_5": 4.5, "pipeline": "ensemble"},
+            }
+        ]
+
+    monkeypatch.setattr(matcher_client, "analyze", fake_analyze)
 
     queue_items = [
         {
@@ -337,24 +281,24 @@ async def test_run_scorer_phase_success(fake_matcher_scripts, isolated_env):
     ]
     results = await mr.run_scorer_phase("run_1", "claude-ensemble", queue_items)
     assert results[0]["status"] == "ok"
-    assert "run_1" not in mr.active_run_processes
+    # Relabeled from matcher's own "ensemble" tag to the viewer's mode convention.
+    assert results[0]["analysis"]["pipeline"] == "claude-ensemble"
     log_text = mr.match_run_log_path("run_1").read_text()
-    assert "[match-run run_1] stderr:" in log_text
+    assert "[score] start" in log_text
+    assert "[score] done" in log_text
 
 
-async def test_run_scorer_phase_all_error_raises(fake_matcher_scripts, isolated_env):
+async def test_run_scorer_phase_all_error_raises(isolated_env, monkeypatch):
     mr.match_run_input_path("run_1").parent.mkdir(parents=True, exist_ok=True)
     job_line = json.dumps(
-        {
-            "provider": "gh",
-            "source_key": "acme",
-            "job_id": "1",
-            "title": "Backend",
-            "company": "acme",
-            "_force_error": True,
-        }
+        {"provider": "gh", "source_key": "acme", "job_id": "1", "title": "Backend", "company": "acme"}
     )
     mr.match_run_input_path("run_1").write_text(job_line + "\n")
+
+    async def fake_analyze(mode, jobs, run_id):
+        return [{"status": "error", "provider": "gh", "source_key": "acme", "job_id": "1", "error": "forced"}]
+
+    monkeypatch.setattr(matcher_client, "analyze", fake_analyze)
 
     queue_items = [
         {
@@ -364,11 +308,58 @@ async def test_run_scorer_phase_all_error_raises(fake_matcher_scripts, isolated_
             "subtasks": queue_store.build_subtasks("claude-ensemble"),
         }
     ]
-    with pytest.raises(RuntimeError, match="forced failure"):
+    with pytest.raises(RuntimeError, match="forced"):
         await mr.run_scorer_phase("run_1", "claude-ensemble", queue_items)
 
 
-async def test_execute_match_run_from_input_end_to_end(fake_matcher_scripts, isolated_env):
+async def test_run_scorer_phase_matcher_call_failure_raises(isolated_env, monkeypatch):
+    mr.match_run_input_path("run_1").parent.mkdir(parents=True, exist_ok=True)
+    mr.match_run_input_path("run_1").write_text("{}\n")
+
+    async def failing_analyze(mode, jobs, run_id):
+        raise RuntimeError("matcher unreachable")
+
+    monkeypatch.setattr(matcher_client, "analyze", failing_analyze)
+
+    with pytest.raises(RuntimeError, match="matcher unreachable"):
+        await mr.run_scorer_phase("run_1", "claude", [])
+
+
+@pytest.fixture
+def mocked_matcher(monkeypatch):
+    async def fake_parse_batch(urls):
+        return [{"url": u, "parsed": {"title": "Parsed"}, "parse_error": None} for u in urls]
+
+    async def fake_analyze(mode, jobs, run_id):
+        results = []
+        for job in jobs:
+            if job.get("_force_error"):
+                results.append(
+                    {
+                        "status": "error",
+                        "provider": job["provider"],
+                        "source_key": job["source_key"],
+                        "job_id": job["job_id"],
+                        "error": "forced failure",
+                    }
+                )
+            else:
+                results.append(
+                    {
+                        "status": "ok",
+                        "provider": job["provider"],
+                        "source_key": job["source_key"],
+                        "job_id": job["job_id"],
+                        "analysis": {"score_5": 4.5, "pipeline": "ensemble"},
+                    }
+                )
+        return results
+
+    monkeypatch.setattr(matcher_client, "parse_batch", fake_parse_batch)
+    monkeypatch.setattr(matcher_client, "analyze", fake_analyze)
+
+
+async def test_execute_match_run_from_input_end_to_end(mocked_matcher, migrated_env):
     run_id = "run_e2e"
     await mr.write_manifest(
         run_id,
@@ -400,7 +391,7 @@ async def test_execute_match_run_from_input_end_to_end(fake_matcher_scripts, iso
     assert all(s["status"] == "done" for s in items[0]["subtasks"])
 
 
-async def test_execute_match_run_partial_failure_does_not_raise(fake_matcher_scripts, isolated_env):
+async def test_execute_match_run_partial_failure_does_not_raise(mocked_matcher, migrated_env):
     run_id = "run_partial"
     await mr.write_manifest(
         run_id,
@@ -436,7 +427,7 @@ async def test_execute_match_run_partial_failure_does_not_raise(fake_matcher_scr
     assert manifest["matched_count"] == 1
 
 
-async def test_execute_match_run_all_error_flips_manifest_failed(fake_matcher_scripts, isolated_env):
+async def test_execute_match_run_all_error_flips_manifest_failed(mocked_matcher, isolated_env):
     run_id = "run_allerr"
     await mr.write_manifest(
         run_id,
@@ -472,6 +463,40 @@ async def test_execute_match_run_all_error_flips_manifest_failed(fake_matcher_sc
     assert items[0]["attempt"] == 2
 
 
-async def test_execute_match_run_missing_manifest_is_noop(fake_matcher_scripts):
+async def test_execute_match_run_missing_manifest_is_noop(mocked_matcher):
     await mr.execute_match_run_from_input("does-not-exist", ["{}"], "claude")
     assert await mr.read_manifest("does-not-exist") is None
+
+
+async def test_execute_match_run_end_to_end_with_parse_phase(mocked_matcher, migrated_env):
+    run_id = "run_full"
+    await mr.write_manifest(
+        run_id,
+        {
+            "id": run_id,
+            "status": "pending",
+            "mode": "claude",
+            "job_count": 1,
+            "parsed_count": 0,
+            "matched_count": 0,
+            "created_at": "x",
+            "updated_at": "x",
+            "error": None,
+        },
+    )
+    jobs = [
+        {
+            "provider": "gh",
+            "source_key": "acme",
+            "job_id": "1",
+            "title": "Backend",
+            "job_url": "https://example.com/1",
+        }
+    ]
+
+    await mr.execute_match_run(run_id, jobs, "claude")
+
+    manifest = await mr.read_manifest(run_id)
+    assert manifest["status"] == "completed"
+    assert manifest["parsed_count"] == 1
+    assert manifest["matched_count"] == 1

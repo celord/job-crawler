@@ -42,8 +42,6 @@ def isolated_env(tmp_path, monkeypatch):
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     (state_dir / "match-runs").mkdir()
-    matcher_dir = tmp_path / "matcher"
-    matcher_dir.mkdir()
     frontend_public = tmp_path / "frontend" / "public"
     frontend_public.mkdir(parents=True)
     catalog_db = state_dir / "catalog.sqlite"
@@ -63,9 +61,7 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CRAWLER_ACTIVE_LOCK_STALE_MS", 7_200_000)
     monkeypatch.setattr(config, "CRAWLER_PROGRESS_PATH", str(state_dir / "crawler-progress.json"))
     monkeypatch.setattr(config, "SAVED_SEARCHES_PATH", str(frontend_public / "saved-searches.json"))
-    monkeypatch.setattr(config, "MATCHER_DIR", str(matcher_dir))
-    monkeypatch.setattr(config, "CAREER_OPS_DIR", "career-ops")
-    monkeypatch.setattr(config, "PYTHON_BIN", sys.executable)
+    monkeypatch.setattr(config, "MATCHER_SERVICE_URL", "http://matcher-test-stub:8001")
     monkeypatch.setattr(config, "SAVED_SEARCH_ANALYZER_ENABLED", True)
     monkeypatch.setattr(config, "SAVED_SEARCH_ANALYZER_INTERVAL_MS", 60_000)
     monkeypatch.setattr(config, "DISCORD_WEBHOOK_URL", "")
@@ -81,10 +77,9 @@ def isolated_env(tmp_path, monkeypatch):
 
     logo_dev_brand_cache.clear()
 
-    from services.match_run import active_run_ids, active_run_processes
+    from services.match_run import active_run_ids
 
     active_run_ids.clear()
-    active_run_processes.clear()
 
     import services.saved_search as saved_search
 
@@ -100,7 +95,6 @@ def isolated_env(tmp_path, monkeypatch):
     return {
         "tmp_path": tmp_path,
         "state_dir": state_dir,
-        "matcher_dir": matcher_dir,
         "catalog_db": catalog_db,
     }
 

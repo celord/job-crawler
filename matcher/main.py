@@ -6,6 +6,7 @@ from fastapi import APIRouter, FastAPI
 from config import settings
 from lib import llm_client
 from routers.analyze import router as analyze_router
+from routers.analyze import runs_router
 from routers.parse import router as parse_router
 from services import parser as parser_service
 from services.profile import load_profile
@@ -51,4 +52,5 @@ async def health() -> dict[str, object]:
 
 app.include_router(router)
 app.include_router(analyze_router)
+app.include_router(runs_router)
 app.include_router(parse_router)

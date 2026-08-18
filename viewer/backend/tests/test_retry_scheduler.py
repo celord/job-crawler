@@ -4,7 +4,7 @@ import pytest
 
 import config
 from services import match_run as mr
-from services import queue_store, retry_scheduler
+from services import matcher_client, queue_store, retry_scheduler
 
 
 class FakeResponse:
@@ -12,28 +12,21 @@ class FakeResponse:
         self.status_code = status_code
 
 
-ENSEMBLE_SCRIPT = """
-import argparse, json, sys
-p = argparse.ArgumentParser()
-p.add_argument("--jobs-jsonl", required=True)
-p.add_argument("--results-jsonl", required=True)
-p.add_argument("--profile-dir", required=True)
-p.add_argument("--pipeline", required=True)
-args = p.parse_args()
-with open(args.jobs_jsonl) as f:
-    jobs = [json.loads(l) for l in f.read().splitlines() if l.strip()]
-results = [{"status": "ok", "provider": j["provider"], "source_key": j["source_key"], "job_id": j["job_id"],
-            "analysis": {"score_5": 4.5, "pipeline": "claude-ensemble"}} for j in jobs]
-with open(args.results_jsonl, "w") as f:
-    for r in results:
-        f.write(json.dumps(r) + "\\n")
-"""
-
-
 @pytest.fixture
-def env(migrated_env):
-    (migrated_env["matcher_dir"] / "ensemble_runner.py").write_text(ENSEMBLE_SCRIPT)
-    (migrated_env["matcher_dir"] / "job_fit_analyzer.py").write_text(ENSEMBLE_SCRIPT)
+def env(migrated_env, monkeypatch):
+    async def fake_analyze(mode, jobs, run_id):
+        return [
+            {
+                "status": "ok",
+                "provider": j["provider"],
+                "source_key": j["source_key"],
+                "job_id": j["job_id"],
+                "analysis": {"score_5": 4.5, "pipeline": "ensemble"},
+            }
+            for j in jobs
+        ]
+
+    monkeypatch.setattr(matcher_client, "analyze", fake_analyze)
     return migrated_env
 
 
@@ -92,10 +85,8 @@ async def test_tick_reruns_due_match_run_item(env):
             "status": "retrying",
             "next_retry_at": "2020-01-01T00:00:00Z",
             "subtasks": [
-                {"id": "scorer:maverick"},
-                {"id": "scorer:kimi"},
-                {"id": "scorer:nemotron"},
-                {"id": "synthesis"},
+                {"id": "parse", "status": "done"},
+                {"id": "score"},
                 {"id": "discord"},
             ],
             "attempt": 1,
