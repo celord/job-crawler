@@ -6,7 +6,10 @@ upsert column list.
 """
 
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
+
+if TYPE_CHECKING:
+    from http_client import HttpClient
 
 Provider = Literal[
     "ashby",
@@ -114,6 +117,7 @@ class CrawlReport:
 
 @dataclass
 class CrawlContext:
+    http: "HttpClient"
     fetched_at: str
     max_jobs_per_source: int | None = None
     url_template: str | None = None
