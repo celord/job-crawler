@@ -99,7 +99,9 @@ async def list_jobs(
 
 
 @router.get("/job")
-async def get_job(provider: str | None = None, source_key: str | None = None, job_id: str | None = None) -> dict:
+async def get_job(
+    provider: str | None = None, source_key: str | None = None, job_id: str | None = None
+) -> dict:
     _require_job_key(provider, source_key, job_id)
 
     row = await fetchone(
@@ -114,7 +116,9 @@ async def get_job(provider: str | None = None, source_key: str | None = None, jo
 
 
 @router.get("/job-parsed")
-async def get_job_parsed(provider: str | None = None, source_key: str | None = None, job_id: str | None = None) -> Any:
+async def get_job_parsed(
+    provider: str | None = None, source_key: str | None = None, job_id: str | None = None
+) -> Any:
     _require_job_key(provider, source_key, job_id)
 
     row = await fetchone(
@@ -153,7 +157,7 @@ async def get_stats() -> dict:
 async def get_trends() -> list:
     path = Path(config.STATE_DIR) / "trends.jsonl"
     try:
-        async with aiofiles.open(path, "r", encoding="utf-8") as f:
+        async with aiofiles.open(path, encoding="utf-8") as f:
             raw = await f.read()
     except OSError:
         return []

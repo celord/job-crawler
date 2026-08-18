@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiofiles
@@ -12,7 +12,13 @@ from db import fetchall
 from services import queue_store
 from services.analysis import get_analysis_cache, has_full_analysis
 from services.filters import add_job_filter_conditions
-from services.match_run import STATUS_PENDING, active_run_ids, execute_match_run, generate_run_id, write_manifest
+from services.match_run import (
+    STATUS_PENDING,
+    active_run_ids,
+    execute_match_run,
+    generate_run_id,
+    write_manifest,
+)
 from services.notifications import read_hidden_jobs
 
 logger = logging.getLogger(__name__)
@@ -32,7 +38,7 @@ _task: asyncio.Task | None = None
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def set_paused(value: bool) -> None:
@@ -42,7 +48,7 @@ def set_paused(value: bool) -> None:
 
 async def read_saved_searches() -> list[dict]:
     try:
-        async with aiofiles.open(config.SAVED_SEARCHES_PATH, "r", encoding="utf-8") as f:
+        async with aiofiles.open(config.SAVED_SEARCHES_PATH, encoding="utf-8") as f:
             raw = await f.read()
         parsed = json.loads(raw)
         return [item for item in parsed if isinstance(item, dict)] if isinstance(parsed, list) else []
@@ -95,7 +101,11 @@ async def find_next_saved_search_job() -> dict | None:
 
             for job in jobs:
                 key = f"{job['provider']}|{job['source_key']}|{job['job_id']}"
-                if key in hidden_jobs or has_full_analysis(analysis_cache.get(key)) or key in active_queue_keys:
+                if (
+                    key in hidden_jobs
+                    or has_full_analysis(analysis_cache.get(key))
+                    or key in active_queue_keys
+                ):
                     continue
                 return {"job": job, "search": search}
 

@@ -18,7 +18,6 @@ from routers.queue import router as queue_router
 from services import retry_scheduler, saved_search
 from services.match_run import mark_orphaned_runs_failed
 
-
 logging.basicConfig(level=logging.INFO, format="[viewer] %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -58,6 +57,7 @@ if STATIC_DIR.is_dir():
         if exc.status_code == 404 and not request.url.path.startswith("/api"):
             return FileResponse(STATIC_DIR / "index.html")
         return await http_exception_handler(request, exc)
+
 else:
     logger.warning("static dir not found, skipping frontend mount: %s", STATIC_DIR)
 

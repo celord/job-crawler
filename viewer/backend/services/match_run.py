@@ -4,7 +4,7 @@ import logging
 import random
 import re
 import string
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiofiles
@@ -32,11 +32,11 @@ _RUN_ID_SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def generate_run_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     suffix = "".join(random.choices(_RUN_ID_SUFFIX_ALPHABET, k=6))
     return f"run_{timestamp}_{suffix}"
 
@@ -69,7 +69,7 @@ async def write_manifest(run_id: str, manifest: dict) -> None:
 
 async def read_manifest(run_id: str) -> dict | None:
     try:
-        async with aiofiles.open(match_run_manifest_path(run_id), "r", encoding="utf-8") as f:
+        async with aiofiles.open(match_run_manifest_path(run_id), encoding="utf-8") as f:
             raw = await f.read()
         return json.loads(raw)
     except (OSError, ValueError):
@@ -209,13 +209,18 @@ def build_jd_text(parsed: dict, job: dict) -> str:
     add("Workplace type", parsed.get("workplace_type"))
     add(
         "Compensation",
-        parsed.get("compensation")
-        if is_real_compensation(parsed.get("compensation"))
-        else sanitize_job(job).get("compensation"),
+        (
+            parsed.get("compensation")
+            if is_real_compensation(parsed.get("compensation"))
+            else sanitize_job(job).get("compensation")
+        ),
     )
     add(
         "Posted datetime",
-        parsed.get("posted_datetime") or job.get("posted_at") or job.get("updated_at") or job.get("first_seen_at"),
+        parsed.get("posted_datetime")
+        or job.get("posted_at")
+        or job.get("updated_at")
+        or job.get("first_seen_at"),
     )
     add("JD concepts", ", ".join(concepts))
     add("Technical tools mentioned", ", ".join(technical_tools))
@@ -289,7 +294,9 @@ def _build_input_line(job: dict, parsed: dict, parse_error: str | None) -> str:
         ),
         "responsibilities": parsed.get("responsibilities") or [],
         "requirements_summary": parsed.get("requirements_summary") or [],
-        "must_have_requirements": parsed.get("must_have_requirements") or parsed.get("requirements_summary") or [],
+        "must_have_requirements": parsed.get("must_have_requirements")
+        or parsed.get("requirements_summary")
+        or [],
         "nice_to_have_requirements": parsed.get("nice_to_have_requirements") or [],
         "technical_tools_mentioned": parsed.get("technical_tools_mentioned") or [],
         "jd_concepts": parsed.get("jd_concepts") or [],
@@ -323,7 +330,7 @@ async def write_batch_input(run_id: str, jobs: list[dict], manifest: dict) -> di
 
 async def read_input_lines(run_id: str) -> list[str]:
     try:
-        async with aiofiles.open(match_run_input_path(run_id), "r", encoding="utf-8") as f:
+        async with aiofiles.open(match_run_input_path(run_id), encoding="utf-8") as f:
             raw = await f.read()
     except OSError:
         return []
@@ -332,7 +339,7 @@ async def read_input_lines(run_id: str) -> list[str]:
 
 async def read_results_jsonl(run_id: str) -> list[dict]:
     try:
-        async with aiofiles.open(match_run_results_path(run_id), "r", encoding="utf-8") as f:
+        async with aiofiles.open(match_run_results_path(run_id), encoding="utf-8") as f:
             raw = await f.read()
     except OSError:
         return []
@@ -527,7 +534,9 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
     now = _now_iso()
     existing_by_id = {i["id"]: i for i in await queue_store.read_queue()}
     queue_items: list[dict] = []
-    for job in jobs_for_queue or [{"provider": "", "source_key": run_id, "job_id": run_id, "title": "Unknown job"}]:
+    for job in jobs_for_queue or [
+        {"provider": "", "source_key": run_id, "job_id": run_id, "title": "Unknown job"}
+    ]:
         job_key = f"{job.get('provider', '')}|{job.get('source_key', '')}|{job.get('job_id', '')}"
         item = _new_queue_item(run_id, job, mode, existing_by_id.get(f"{run_id}:{job_key}"), now)
         queue_items.append(item)

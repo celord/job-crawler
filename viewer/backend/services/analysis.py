@@ -3,7 +3,7 @@ import json
 import logging
 import math
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiofiles
@@ -28,7 +28,7 @@ def parse_job_key(key: str) -> tuple[str, str, str] | None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def analysis_score_5(analysis: object) -> float | None:
@@ -83,7 +83,7 @@ async def _migrate_legacy_cache_if_empty() -> None:
 
     path = Path(config.ANALYSIS_CACHE_PATH)
     try:
-        async with aiofiles.open(path, "r", encoding="utf-8") as f:
+        async with aiofiles.open(path, encoding="utf-8") as f:
             raw = await f.read()
         parsed = json.loads(raw)
     except (OSError, ValueError):
@@ -144,9 +144,7 @@ async def get_analysis_cache() -> dict:
     if _cache is not None and (now - _cache_at) < _CACHE_TTL_S:
         return _cache
 
-    rows = await fetchall(
-        "SELECT job_key, pipeline, analysis, analyzed_at, run_id FROM job_analyses"
-    )
+    rows = await fetchall("SELECT job_key, pipeline, analysis, analyzed_at, run_id FROM job_analyses")
     _cache = _rows_to_cache(rows)
     _cache_at = now
     return _cache

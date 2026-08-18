@@ -51,7 +51,7 @@ def _next_scheduled_run() -> str:
 @router.get("/crawl-status")
 async def get_crawl_status() -> dict:
     try:
-        async with aiofiles.open(config.CRAWLER_PROGRESS_PATH, "r", encoding="utf-8") as f:
+        async with aiofiles.open(config.CRAWLER_PROGRESS_PATH, encoding="utf-8") as f:
             raw = await f.read()
         progress = json.loads(raw.strip())
     except (OSError, ValueError):
