@@ -1,5 +1,6 @@
-# Task runner for the Python viewer backend (viewer/backend/).
-# Everything runs in Docker per this repo's "never run npm/python directly" policy.
+# Task runner for the Python viewer backend (viewer/backend/) and matcher
+# service (matcher/). Everything runs in Docker per this repo's "never run
+# npm/python directly" policy.
 #
 # Usage: just <recipe>   (install https://github.com/casey/just)
 
@@ -7,6 +8,8 @@ set shell := ["bash", "-uc"]
 
 viewer_backend := "viewer/backend"
 viewer_image := "job-crawler-viewer-dev"
+matcher_dir := "matcher"
+matcher_image := "job-crawler-matcher-dev"
 uid := `id -u`
 gid := `id -g`
 
@@ -47,3 +50,42 @@ dev: _viewer-image
         -e NVIDIA_ENSEMBLE_SCORERS="${NVIDIA_ENSEMBLE_SCORERS:-}" \
         -e NVIDIA_ENSEMBLE_SYNTHESIZER="${NVIDIA_ENSEMBLE_SYNTHESIZER:-}" \
         {{viewer_image}}
+
+# Build (or reuse the cached) matcher dev image — deps + lint/test tooling
+_matcher-image:
+    docker build -q -t {{matcher_image}} -f {{matcher_dir}}/Dockerfile.dev {{matcher_dir}} > /dev/null
+
+# Lint the matcher service (ruff + black --check); fails on any violation
+matcher-lint: _matcher-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{matcher_dir}}:/app" -w /app {{matcher_image}} \
+        sh -c "ruff check . && black --check ."
+
+# Auto-fix formatting/lint issues in the matcher service (ruff --fix + black)
+matcher-fmt: _matcher-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{matcher_dir}}:/app" -w /app {{matcher_image}} \
+        sh -c "ruff check --fix . && black ."
+
+# Run the matcher test suite with coverage (fails under 70%)
+matcher-test: _matcher-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{matcher_dir}}:/app" -w /app {{matcher_image}} \
+        python -m pytest --cov=. --cov-report=term-missing
+
+# Run the matcher dev server with live reload
+matcher-dev: _matcher-image
+    docker run --rm -it \
+        -v "$(pwd)/{{matcher_dir}}:/app" \
+        -p 8001:8001 \
+        -e CAREER_OPS_DIR="${CAREER_OPS_DIR:-career-ops}" \
+        -e STATE_DIR="${STATE_DIR:-/app/state}" \
+        -e NVIDIA_API_KEY="${NVIDIA_API_KEY:-}" \
+        -e NVIDIA_MODEL="${NVIDIA_MODEL:-meta/llama-4-maverick-17b-128e-instruct}" \
+        -e NVIDIA_ENSEMBLE_SCORERS="${NVIDIA_ENSEMBLE_SCORERS:-}" \
+        -e NVIDIA_ENSEMBLE_SYNTHESIZER="${NVIDIA_ENSEMBLE_SYNTHESIZER:-}" \
+        -e ENSEMBLE_JOB_CONCURRENCY="${ENSEMBLE_JOB_CONCURRENCY:-1}" \
+        {{matcher_image}}
+
+# Lint both the viewer backend and the matcher service
+lint-all: lint matcher-lint
+
+# Run both the viewer backend and matcher test suites
+test-all: test matcher-test

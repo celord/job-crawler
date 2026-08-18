@@ -6,8 +6,9 @@ from fastapi import APIRouter, FastAPI
 from config import settings
 from lib import llm_client
 from routers.analyze import router as analyze_router
+from routers.parse import router as parse_router
+from services import parser as parser_service
 from services.profile import load_profile
-
 
 logging.basicConfig(level=logging.INFO, format="[matcher] %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -27,10 +28,12 @@ async def lifespan(app: FastAPI):
         logger.warning("profile not loaded from %s: %s", settings.career_ops_dir, exc)
 
     llm_client.start_client()
+    parser_service.start_client()
 
     yield
 
     await llm_client.stop_client()
+    await parser_service.stop_client()
 
 
 app = FastAPI(title="matcher-service", lifespan=lifespan)
@@ -48,3 +51,4 @@ async def health() -> dict[str, object]:
 
 app.include_router(router)
 app.include_router(analyze_router)
+app.include_router(parse_router)

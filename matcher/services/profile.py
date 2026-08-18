@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 _profile_cache: dict[str, str] | None = None
 
 
@@ -11,10 +10,10 @@ def load_profile(profile_dir: str) -> dict[str, str]:
 
     base = Path(profile_dir)
     files = {
-        "profile_yml": base / "profile.yml",
-        "portals_yml": base / "portals.yml",
-        "cv_md": base / "cv.md",
-        "_profile_md": base / "_profile.md",
+        "profile.yml": base / "profile.yml",
+        "portals.yml": base / "portals.yml",
+        "cv.md": base / "cv.md",
+        "_profile.md": base / "_profile.md",
     }
 
     loaded: dict[str, str] = {}
