@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 
 from config import settings
+from lib import llm_client
+from routers.analyze import router as analyze_router
 from services.profile import load_profile
 
 
@@ -24,7 +26,11 @@ async def lifespan(app: FastAPI):
         app.state.profile_error = str(exc)
         logger.warning("profile not loaded from %s: %s", settings.career_ops_dir, exc)
 
+    llm_client.start_client()
+
     yield
+
+    await llm_client.stop_client()
 
 
 app = FastAPI(title="matcher-service", lifespan=lifespan)
@@ -41,3 +47,4 @@ async def health() -> dict[str, object]:
 
 
 app.include_router(router)
+app.include_router(analyze_router)
