@@ -10,6 +10,8 @@ viewer_backend := "viewer/backend"
 viewer_image := "job-crawler-viewer-dev"
 matcher_dir := "matcher"
 matcher_image := "job-crawler-matcher-dev"
+scheduler_dir := "scheduler"
+scheduler_image := "job-crawler-scheduler-dev"
 uid := `id -u`
 gid := `id -g`
 
@@ -84,8 +86,27 @@ matcher-dev: _matcher-image
         -e ENSEMBLE_JOB_CONCURRENCY="${ENSEMBLE_JOB_CONCURRENCY:-1}" \
         {{matcher_image}}
 
-# Lint both the viewer backend and the matcher service
-lint-all: lint matcher-lint
+# Build (or reuse the cached) scheduler dev image — deps + lint/test tooling
+_scheduler-image:
+    docker build -q -t {{scheduler_image}} -f {{scheduler_dir}}/Dockerfile.dev {{scheduler_dir}} > /dev/null
 
-# Run both the viewer backend and matcher test suites
-test-all: test matcher-test
+# Lint the scheduler service (ruff + black --check); fails on any violation
+scheduler-lint: _scheduler-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{scheduler_dir}}:/app" -w /app {{scheduler_image}} \
+        sh -c "ruff check . && black --check ."
+
+# Auto-fix formatting/lint issues in the scheduler service (ruff --fix + black)
+scheduler-fmt: _scheduler-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{scheduler_dir}}:/app" -w /app {{scheduler_image}} \
+        sh -c "ruff check --fix . && black ."
+
+# Run the scheduler test suite with coverage (fails under 70%)
+scheduler-test: _scheduler-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{scheduler_dir}}:/app" -w /app {{scheduler_image}} \
+        python -m pytest --cov=. --cov-report=term-missing
+
+# Lint the viewer backend, the matcher service, and the scheduler service
+lint-all: lint matcher-lint scheduler-lint
+
+# Run the viewer backend, matcher, and scheduler test suites
+test-all: test matcher-test scheduler-test
