@@ -12,6 +12,8 @@ matcher_dir := "matcher"
 matcher_image := "job-crawler-matcher-dev"
 scheduler_dir := "scheduler"
 scheduler_image := "job-crawler-scheduler-dev"
+crawler_dir := "crawler"
+crawler_image := "job-crawler-crawler-dev"
 uid := `id -u`
 gid := `id -g`
 
@@ -105,8 +107,27 @@ scheduler-test: _scheduler-image
     docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{scheduler_dir}}:/app" -w /app {{scheduler_image}} \
         python -m pytest --cov=. --cov-report=term-missing
 
-# Lint the viewer backend, the matcher service, and the scheduler service
-lint-all: lint matcher-lint scheduler-lint
+# Build (or reuse the cached) crawler dev image — deps + lint/test tooling
+_crawler-image:
+    docker build -q -t {{crawler_image}} -f {{crawler_dir}}/Dockerfile.dev {{crawler_dir}} > /dev/null
 
-# Run the viewer backend, matcher, and scheduler test suites
-test-all: test matcher-test scheduler-test
+# Lint the crawler service (ruff + black --check); fails on any violation
+crawler-lint: _crawler-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{crawler_dir}}:/app" -w /app {{crawler_image}} \
+        sh -c "ruff check . && black --check ."
+
+# Auto-fix formatting/lint issues in the crawler service (ruff --fix + black)
+crawler-fmt: _crawler-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{crawler_dir}}:/app" -w /app {{crawler_image}} \
+        sh -c "ruff check --fix . && black ."
+
+# Run the crawler test suite with coverage (fails under 70%)
+crawler-test: _crawler-image
+    docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{crawler_dir}}:/app" -w /app {{crawler_image}} \
+        python -m pytest --cov=. --cov-report=term-missing
+
+# Lint the viewer backend, the matcher service, the scheduler service, and the crawler
+lint-all: lint matcher-lint scheduler-lint crawler-lint
+
+# Run the viewer backend, matcher, scheduler, and crawler test suites
+test-all: test matcher-test scheduler-test crawler-test

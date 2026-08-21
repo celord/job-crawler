@@ -653,8 +653,8 @@ The riskiest parts are Epic 5 (Workday's pagination + relative-date parsing + co
 
 ## Release Gates
 
-- **Gate A (Provider parity):** Epics 1–5 complete, every provider's normalize function has a passing test with output matching the TS version's fixtures.
-- **Gate B (Orchestration parity):** Epic 6 complete, concurrency/progress/output-shape acceptance criteria all pass.
-- **Gate C (Dockerized, contract-verified):** Epics 7–9 complete, Story 9.2's live viewer-against-real-crawler-output check passes.
+- **Gate A (Provider parity):** Epics 1–5 complete, every provider's normalize function has a passing test with output matching the TS version's fixtures. ✅ Passed (Batches 1–3).
+- **Gate B (Orchestration parity):** Epic 6 complete, concurrency/progress/output-shape acceptance criteria all pass. ✅ Passed (Batch 4).
+- **Gate C (Dockerized, contract-verified):** Epics 7–9 complete, Story 9.2's live viewer-against-real-crawler-output check passes. ✅ Passed (Batch 5) — verified via a real standalone Docker run against sample sources plus one real Greenhouse board (Asana, 126 real jobs), with a real viewer instance pointed at the resulting `catalog.sqlite` confirming `/api/jobs`, `/api/stats`, and `/api/crawl-status` all serve correctly. Lock-file lifecycle verified in both success and forced-failure runs.
 
-Do not delete `crawler/src/` (the TypeScript source) until Gate C passes — matches this session's established pattern of removing old implementations only after the replacement is proven working end-to-end, not before.
+`crawler/src/` (the TypeScript source), `docker-entrypoint.sh`, `post-crawl.sh`, `package.json`, `package-lock.json`, and `tsconfig.json` were deleted in Batch 5 now that Gate C has passed.

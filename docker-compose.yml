@@ -94,5 +94,3 @@ services:
       - /app/state/exclude.jsonl
       - --catalog-db
       - /app/state/catalog.sqlite
-      - --catalog-file
-      - /app/output/current-jobs.jsonl
