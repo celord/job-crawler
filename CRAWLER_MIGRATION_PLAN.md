@@ -16,11 +16,9 @@ Port `crawler/` (the ATS-scraping service — 3,104 lines of TypeScript across 2
 
 ---
 
-## Decision needed before starting
+## Decision (resolved)
 
-| Question | Finding | Recommendation |
-|---|---|---|
-| Is `current-jobs.jsonl` (the `--catalog-file` / `exportJsonl()` output) still needed? | Grepped both `viewer/backend/` and `matcher/` for any reference to `current-jobs.jsonl` or a read of the `--catalog-file` path — zero consumers found anywhere in this repo. | Ask the user before porting `exportJsonl()`. If truly unused (a manual-inspection artifact, or consumed by something outside this repo), drop it from the port — one less thing to keep faithful. If kept "just in case," port it verbatim (it's ~15 lines, low cost either way). |
+`current-jobs.jsonl` (the `--catalog-file` / `exportJsonl()` output) has zero consumers anywhere in `viewer/backend/` or `matcher/`. **Decision: drop it.** `catalog_store.py` does not get an `export_jsonl` method, `--catalog-file` is not a recognized flag in the Python CLI, and `docker-compose.yml`'s crawler `command:` needs `--catalog-file` removed in Story 8.1.
 
 ---
 
@@ -71,7 +69,8 @@ crawler/
     ├── test_exclusions.py
     ├── test_runner.py
     ├── test_post_crawl.py
-    └── providers/
+    └── test_providers/          # not tests/providers/ -- collides with the
+        │                        # top-level providers/ package on sys.path
         ├── test_ashby.py
         ├── test_bamboohr.py
         ├── test_greenhouse.py
@@ -248,7 +247,7 @@ The riskiest parts are Epic 5 (Workday's pagination + relative-date parsing + co
 
 **Instructions:**
 1. `finalize_run(run_id: str)`: `DELETE FROM catalog_jobs WHERE seen_run_id != ?` — called once at the very end of a crawl, using the crawl's start-timestamp string as `run_id`. This is the stale-job pruning step.
-2. `export_jsonl(file_path: str)` — **only if the "Decision needed before starting" question resolves to "keep it."** `SELECT * ... ORDER BY provider, source_key, job_id`, streamed to a `.tmp` file then atomically renamed (`os.replace`, matching every other atomic-write pattern already established in `matcher/`/`viewer/` this session).
+2. `export_jsonl` / `current-jobs.jsonl` / `--catalog-file` are **dropped** (resolved decision above) — no `CatalogStore` method for this.
 3. `trend_log.py::append_trend_entry(db_path, state_dir)`: opens the catalog DB **read-only**, computes `{date (YYYY-MM-DD), total, by_provider: {...}, by_tier: {...}}`, appends one JSON line to `trends.jsonl`. Non-fatal — wrap the caller (in `main.py`, Epic 7) in try/except and log, don't let a trend-log failure fail the whole crawl. Low priority — nothing else in this repo reads `trends.jsonl`, per the research; port faithfully but don't over-invest here.
 
 **Acceptance Criteria:**
@@ -462,7 +461,7 @@ The riskiest parts are Epic 5 (Workday's pagination + relative-date parsing + co
 
 **Instructions:**
 1. `config.py` (or inline in `main.py` via `argparse`, which is a reasonable and idiomatic Python substitute for the TS version's hand-rolled parser — not required to hand-roll a parser to match, `argparse` is the correct tool here).
-2. Full flag list with defaults, ported exactly: `--sources` (`/data/sources`), `--providers` (`all`), `--concurrency` (50), `--out` (`/app/output/jobs.jsonl`), `--report` (`/app/output/report.json`), `--catalog-db` (`/app/state/catalog.sqlite`), `--catalog-file` (none — only if the export-JSONL decision keeps it), `--exclude-sources` (none), `--sample` (debug: crawl only first N sources per provider), `--max-jobs-per-source`, `--max-age-hours`, `--progress-every-ms` (10000), `--provider-concurrency` (parsed as `k=v,k=v` pairs; embedded defaults `{ashby: 2, bamboohr: 10, workday: 5, teamtailor: 10, workable: 10, icims: 5}` — note **`docker-compose.yml`'s command always overrides these** in the real deployment, so this default is only exercised in CLI-standalone/local use, per porting discipline #5's sibling note), `--timeout-ms` (15000), `--retries` (2), `--progress-file` (`/app/state/crawler-progress.json`).
+2. Full flag list with defaults, ported exactly: `--sources` (`/data/sources`), `--providers` (`all`), `--concurrency` (50), `--out` (`/app/output/jobs.jsonl`), `--report` (`/app/output/report.json`), `--catalog-db` (`/app/state/catalog.sqlite`), `--exclude-sources` (none), `--sample` (debug: crawl only first N sources per provider), `--max-jobs-per-source`, `--max-age-hours`, `--progress-every-ms` (10000), `--provider-concurrency` (parsed as `k=v,k=v` pairs; embedded defaults `{ashby: 2, bamboohr: 10, workday: 5, teamtailor: 10, workable: 10, icims: 5}` — note **`docker-compose.yml`'s command always overrides these** in the real deployment, so this default is only exercised in CLI-standalone/local use, per porting discipline #5's sibling note), `--timeout-ms` (15000), `--retries` (2), `--progress-file` (`/app/state/crawler-progress.json`). `--catalog-file` is **not** ported (dropped per the resolved decision above).
 
 **Acceptance Criteria:**
 - [ ] `--provider-concurrency ashby=1,workday=4` parses into the same dict shape `runner.py` expects, overriding the embedded defaults only for the providers mentioned.
@@ -524,7 +523,7 @@ The riskiest parts are Epic 5 (Workday's pagination + relative-date parsing + co
    No `python3 make g++` toolchain needed (that was solely for compiling `better-sqlite3`'s native bindings) — this is a genuine, concrete simplification worth calling out when this story lands.
 2. `requirements.txt`: `httpx`, `python-dateutil` (for the relative/lenient date parsing needed in Workday/TeamTailor per porting discipline #8) — no XML library needed if using stdlib `xml.etree.ElementTree`.
 3. `Dockerfile.dev`, `requirements-dev.txt`, `pyproject.toml` (ruff + black + pytest + `fail_under = 70` coverage), mirroring `matcher/`'s and `scheduler/`'s already-established pattern exactly.
-4. Update `docker-compose.yml`'s `crawler` service: the `command:` array (`--concurrency`, `--provider-concurrency`, `--timeout-ms`, `--retries`, `--exclude-sources`, `--catalog-db`, `--catalog-file`) needs **no changes** — these are the same CLI flags, now parsed by Python's `argparse` instead of the TS parser, so the compose file's invocation stays identical.
+4. Update `docker-compose.yml`'s `crawler` service: the `command:` array's flags (`--concurrency`, `--provider-concurrency`, `--timeout-ms`, `--retries`, `--exclude-sources`, `--catalog-db`) need **no changes** — same CLI flags, now parsed by Python's `argparse` instead of the TS parser. **Remove** the `--catalog-file` line and its value — that flag is dropped (resolved decision above), and the Python CLI doesn't recognize it.
 5. Delete `crawler/tsconfig.json`, `crawler/package.json`, `crawler/package-lock.json` (or whichever lockfile exists) once the Python version is verified working end-to-end — not before, matching this session's established pattern of deleting the old implementation only after the replacement is proven (see the scheduler rewrite's `entrypoint.sh`/`crontab` deletion timing in the just-merged Epic 16-17 PR).
 
 **Acceptance Criteria:**
