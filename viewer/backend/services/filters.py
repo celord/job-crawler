@@ -48,6 +48,38 @@ def _parse_int(raw: str) -> int | None:
     return int(match.group(0)) if match else None
 
 
+_SLUG_SEPARATORS = ("-", "_", ".", "/", " ")
+
+
+def _escape_like(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _company_slug_condition() -> str:
+    return " OR ".join(["LOWER(source_key) LIKE ? ESCAPE '\\'"] * (1 + len(_SLUG_SEPARATORS)))
+
+
+def _company_slug_patterns(term: str) -> list[str]:
+    escaped = _escape_like(term.lower())
+    return [f"{escaped}%"] + [f"%{_escape_like(sep)}{escaped}%" for sep in _SLUG_SEPARATORS]
+
+
+_LOCATION_SEPARATORS = (",", "-", "/", "(", ")", ".")
+
+
+def _location_word_condition() -> str:
+    text = "LOWER(location)"
+    for sep in _LOCATION_SEPARATORS:
+        text = f"REPLACE({text}, '{sep}', ' ')"
+    return f"(' ' || {text} || ' ') LIKE ? ESCAPE '\\'"
+
+
+def _location_word_pattern(term: str) -> str:
+    for sep in _LOCATION_SEPARATORS:
+        term = term.replace(sep, " ")
+    return f"% {_escape_like(term.strip().lower())} %"
+
+
 def add_job_filter_conditions(
     title: str | None = None,
     my_location: str | None = None,
@@ -101,21 +133,24 @@ def add_job_filter_conditions(
     # my_location set + include_remote False -> on-site/hybrid near my_location only.
     if my_location or not include_remote:
         loc_terms = [loc.strip() for loc in my_location.split(",") if loc.strip()] if my_location else []
-        loc_clauses = ["LOWER(location) LIKE ?" for _ in loc_terms]
+        loc_terms = [loc for loc in loc_terms if _location_word_pattern(loc).strip("% ")]
+        loc_clauses = [_location_word_condition() for _ in loc_terms]
         if include_remote:
             conditions.append("(" + " OR ".join([*loc_clauses, "is_remote = 1"]) + ")")
-            params.extend(f"%{loc.lower()}%" for loc in loc_terms)
+            for loc in loc_terms:
+                params.append(_location_word_pattern(loc))
         elif loc_clauses:
             conditions.append("(" + " OR ".join(loc_clauses) + ")")
-            params.extend(f"%{loc.lower()}%" for loc in loc_terms)
+            params.extend(_location_word_pattern(loc) for loc in loc_terms)
         else:
             # remote excluded and no location given -> impossible filter, return nothing
             conditions.append("1 = 0")
 
     if company.strip():
         companies = [c.strip() for c in company.split(",") if c.strip()]
-        conditions.append("(" + " OR ".join("LOWER(source_key) LIKE ?" for _ in companies) + ")")
-        params.extend(f"%{c.lower()}%" for c in companies)
+        conditions.append("(" + " OR ".join(_company_slug_condition() for _ in companies) + ")")
+        for c in companies:
+            params.extend(_company_slug_patterns(c))
 
     if sources_str.strip():
         provider_list = [s.strip() for s in sources_str.split(",") if s.strip()]
