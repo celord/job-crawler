@@ -7,7 +7,7 @@ _client: httpx.AsyncClient | None = None
 
 def start_client() -> None:
     global _client
-    _client = httpx.AsyncClient(base_url=config.MATCHER_SERVICE_URL, timeout=httpx.Timeout(180, connect=10))
+    _client = httpx.AsyncClient(base_url=config.MATCHER_SERVICE_URL, timeout=httpx.Timeout(600, connect=10))
 
 
 async def stop_client() -> None:

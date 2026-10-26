@@ -128,6 +128,60 @@ async def test_chat_completions_exhausts_retries_and_raises(monkeypatch):
         await llm_client.stop_client()
 
 
+@pytest.mark.asyncio
+async def test_chat_completions_retries_then_succeeds_on_429(monkeypatch):
+    llm_client.start_client()
+    attempts = {"n": 0}
+    try:
+
+        async def fake_post(self, url, json=None, headers=None):
+            attempts["n"] += 1
+            if attempts["n"] < 2:
+                return httpx.Response(429, request=httpx.Request("POST", url))
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "recovered"}}]},
+                request=httpx.Request("POST", url),
+            )
+
+        monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+        monkeypatch.setattr("asyncio.sleep", lambda *_a, **_k: _instant_sleep())
+        result = await llm_client.chat_completions(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": "hi"}],
+            temperature=0.2,
+            max_tokens=100,
+        )
+        assert result == "recovered"
+        assert attempts["n"] == 2
+    finally:
+        await llm_client.stop_client()
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_null_content_raises_clear_error(monkeypatch):
+    llm_client.start_client()
+    try:
+
+        async def fake_post(self, url, json=None, headers=None):
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": None}}]},
+                request=httpx.Request("POST", url),
+            )
+
+        monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+        with pytest.raises(ValueError, match="empty content"):
+            await llm_client.chat_completions(
+                model="nvidia/nemotron-3.5-lightning-30b-a3b",
+                messages=[{"role": "user", "content": "hi"}],
+                temperature=0.2,
+                max_tokens=100,
+            )
+    finally:
+        await llm_client.stop_client()
+
+
 async def _instant_sleep():
     return None
 

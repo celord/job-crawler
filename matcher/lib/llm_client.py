@@ -101,11 +101,14 @@ async def chat_completions(
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             response = await client.post(url, json=payload, headers=headers)
-            if response.status_code >= 500:
+            if response.status_code >= 500 or response.status_code == 429:
                 raise RetryableHttpError(response.status_code)
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"]["content"]
+            if content is None:
+                raise ValueError(f"model {model} returned empty content")
+            return content
         except (httpx.TimeoutException, httpx.ConnectError, RetryableHttpError) as exc:
             last_exc = exc
             if attempt == MAX_ATTEMPTS:

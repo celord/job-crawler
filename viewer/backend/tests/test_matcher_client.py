@@ -117,3 +117,13 @@ async def test_cancel_run_returns_false_on_network_error(monkeypatch):
         assert await matcher_client.cancel_run("run_1") is False
     finally:
         await matcher_client.stop_client()
+
+
+def test_read_timeout_covers_matcher_worst_case_single_job():
+    # Matcher retries a job 3 times at a 180s read timeout, with 1s and 2s backoff between attempts.
+    matcher_worst_case_seconds = 3 * 180 + 1 + 2
+    matcher_client.start_client()
+    try:
+        assert matcher_client._client.timeout.read >= matcher_worst_case_seconds
+    finally:
+        matcher_client._client = None
