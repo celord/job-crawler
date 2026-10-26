@@ -325,6 +325,37 @@ async def test_run_scorer_phase_matcher_call_failure_raises(isolated_env, monkey
         await mr.run_scorer_phase("run_1", "claude", [])
 
 
+async def test_run_scorer_phase_empty_message_error_names_exception_type(isolated_env, monkeypatch):
+    import httpx
+
+    mr.match_run_input_path("run_1").parent.mkdir(parents=True, exist_ok=True)
+    mr.match_run_input_path("run_1").write_text("{}\n")
+
+    async def timing_out_analyze(mode, jobs, run_id):
+        raise httpx.ReadTimeout("")
+
+    monkeypatch.setattr(matcher_client, "analyze", timing_out_analyze)
+
+    with pytest.raises(RuntimeError, match="ReadTimeout"):
+        await mr.run_scorer_phase("run_1", "claude", [])
+
+
+async def test_execute_match_run_marks_manifest_failed_when_setup_raises(isolated_env, monkeypatch):
+    await mr.write_manifest("run_x", {"id": "run_x", "status": "pending"})
+
+    async def boom(run_id, jobs, manifest):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(mr, "write_batch_input", boom)
+
+    await mr.execute_match_run("run_x", [{"provider": "p", "source_key": "s", "job_id": "1"}], "claude")
+
+    manifest = await mr.read_manifest("run_x")
+    assert manifest["status"] == "failed"
+    assert "disk full" in manifest["error"]
+    assert "run_x" not in mr.active_run_ids
+
+
 @pytest.fixture
 def mocked_matcher(monkeypatch):
     async def fake_parse_batch(urls):
@@ -500,3 +531,12 @@ async def test_execute_match_run_end_to_end_with_parse_phase(mocked_matcher, mig
     assert manifest["status"] == "completed"
     assert manifest["parsed_count"] == 1
     assert manifest["matched_count"] == 1
+
+
+async def test_write_manifest_failure_keeps_previous_manifest_readable():
+    await mr.write_manifest("run_atomic", {"id": "run_atomic", "status": "running"})
+
+    with pytest.raises(TypeError):
+        await mr.write_manifest("run_atomic", {"id": "run_atomic", "status": object()})
+
+    assert await mr.read_manifest("run_atomic") == {"id": "run_atomic", "status": "running"}

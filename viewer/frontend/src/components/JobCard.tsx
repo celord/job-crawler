@@ -38,10 +38,16 @@ export function JobCard({ job }: Props) {
 
   useEffect(() => {
     if (matchRun.data?.status === "completed" || matchRun.data?.status === "failed") {
+      if (matchRun.data.status === "failed") {
+        addToast({ message: `Analysis failed: ${matchRun.data.error || "unknown error"}`, kind: "error" });
+      }
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       setRunId(null);
+    } else if (matchRun.isError) {
+      addToast({ message: "Lost track of the analysis run", kind: "error" });
+      setRunId(null);
     }
-  }, [matchRun.data?.status, queryClient]);
+  }, [matchRun.data?.status, matchRun.data?.error, matchRun.isError, queryClient, addToast]);
 
   if (hiddenJobs.has(key)) return null;
 
