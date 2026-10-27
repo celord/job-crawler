@@ -34,6 +34,13 @@ async def analyze(mode: str, jobs: list[dict], run_id: str) -> list[dict]:
     client = _get_client()
     endpoint = "/analyze/ensemble" if mode == "claude-ensemble" else "/analyze/quick"
     response = await client.post(endpoint, json={"jobs": jobs, "run_id": run_id})
+    if response.is_error:
+        try:
+            detail = response.json().get("detail")
+        except (ValueError, AttributeError):
+            detail = None
+        if isinstance(detail, str) and detail:
+            raise RuntimeError(detail)
     response.raise_for_status()
     return response.json()["results"]
 
