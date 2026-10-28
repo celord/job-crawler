@@ -84,24 +84,9 @@ async def _add_column_if_missing(column: str, sql_type: str) -> None:
             raise
 
 
-async def _bootstrap_fts() -> None:
-    fts_row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs_fts")
-    jobs_row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs")
-    if fts_row and jobs_row and fts_row["n"] == 0 and jobs_row["n"] > 0:
-        await execute("INSERT INTO catalog_jobs_fts(catalog_jobs_fts) VALUES('rebuild')")
-
-
 async def run_migrations() -> None:
     await _add_column_if_missing("analysis_score", "REAL")
     await _add_column_if_missing("parsed_jd", "TEXT")
-    await execute(
-        # The crawler's real catalog_jobs schema has a composite primary key
-        # (provider, source_key, job_id) and no explicit "id" column —
-        # content_rowid must reference SQLite's implicit rowid, not a column
-        # that doesn't exist in production, or this statement fails outright.
-        "CREATE VIRTUAL TABLE IF NOT EXISTS catalog_jobs_fts "
-        "USING fts5(title, content=catalog_jobs, content_rowid=rowid)"
-    )
     await execute(
         "CREATE TABLE IF NOT EXISTS job_analyses ("
         "job_key TEXT NOT NULL, "
@@ -111,4 +96,3 @@ async def run_migrations() -> None:
         "run_id TEXT NOT NULL, "
         "PRIMARY KEY (job_key, pipeline))"
     )
-    await _bootstrap_fts()
