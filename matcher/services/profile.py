@@ -3,6 +3,10 @@ from pathlib import Path
 _profile_cache: dict[str, str] | None = None
 
 
+class ProfileNotLoadedError(RuntimeError):
+    pass
+
+
 def load_profile(profile_dir: str) -> dict[str, str]:
     global _profile_cache
     if _profile_cache is not None:
@@ -26,7 +30,10 @@ def load_profile(profile_dir: str) -> dict[str, str]:
 
 def get_profile() -> dict[str, str]:
     if _profile_cache is None:
-        raise RuntimeError("Profile cache is not loaded")
+        raise ProfileNotLoadedError(
+            "Profile not loaded: check that CAREER_OPS_DIR points to a directory containing "
+            "profile.yml, portals.yml, cv.md and _profile.md"
+        )
     return _profile_cache
 
 

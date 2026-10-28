@@ -1,7 +1,8 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from config import settings
 from lib import llm_client
@@ -9,7 +10,7 @@ from routers.analyze import router as analyze_router
 from routers.analyze import runs_router
 from routers.parse import router as parse_router
 from services import parser as parser_service
-from services.profile import load_profile
+from services.profile import ProfileNotLoadedError, load_profile
 
 logging.basicConfig(level=logging.INFO, format="[matcher] %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -38,6 +39,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="matcher-service", lifespan=lifespan)
+
+
+@app.exception_handler(ProfileNotLoadedError)
+async def profile_not_loaded_handler(_request: Request, exc: ProfileNotLoadedError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
 
 router = APIRouter()
 

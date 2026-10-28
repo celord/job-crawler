@@ -190,3 +190,12 @@ async def test_analyze_quick_records_cancelled_status(monkeypatch, profile_dir):
     assert response.results == [{"status": "error", "error": "cancelled"}]
     assert analyze.run_status["run_will_cancel"]["status"] == "cancelled"
     assert "run_will_cancel" not in analyze.active_tasks
+
+
+def test_analyze_quick_returns_503_when_profile_not_loaded(client):
+    from services.profile import invalidate_profile_cache
+
+    invalidate_profile_cache()
+    resp = client.post("/analyze/quick", json={"jobs": [{"title": "TPM"}]})
+    assert resp.status_code == 503
+    assert "CAREER_OPS_DIR" in resp.json()["detail"]

@@ -43,8 +43,7 @@ async def test_run_migrations_adds_columns_and_tables(isolated_env):
     tables = await fetchall("SELECT name FROM sqlite_master WHERE type = 'table'")
     names = {t["name"] for t in tables}
     assert "job_analyses" in names
-    assert "catalog_jobs_fts" in names
-    assert "catalog_jobs_fts_data" in names  # FTS5 shadow table proves CREATE VIRTUAL TABLE ran
+    assert "catalog_jobs_fts" not in names  # title search uses LIKE; no FTS index is built
 
 
 async def test_run_migrations_is_idempotent(isolated_env):
@@ -58,10 +57,7 @@ async def test_run_migrations_against_real_crawler_schema(isolated_env):
     """The crawler's actual catalog_jobs schema has a composite primary key
     (provider, source_key, job_id) and no explicit "id" column — unlike this
     test suite's own fixture schema. Migrations must work against that real
-    shape too: content_rowid=id previously made CREATE VIRTUAL TABLE succeed
-    (SQLite doesn't validate the column at creation time) but _bootstrap_fts's
-    COUNT query against catalog_jobs_fts then failed with "no such column:
-    T.id", which only surfaced against a real crawler-created database."""
+    shape too, and must leave the catalog rows intact."""
     import sqlite3
 
     conn = sqlite3.connect(isolated_env["catalog_db"])
@@ -87,5 +83,5 @@ async def test_run_migrations_against_real_crawler_schema(isolated_env):
 
     await run_migrations()  # must not raise sqlite3.OperationalError: no such column: T.id
 
-    fts_row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs_fts")
-    assert fts_row["n"] == 1  # _bootstrap_fts's rebuild populated the index
+    row = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs")
+    assert row["n"] == 1
