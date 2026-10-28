@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import random
 import re
 import string
@@ -60,8 +61,12 @@ def match_run_log_path(run_id: str) -> Path:
 
 async def write_manifest(run_id: str, manifest: dict) -> None:
     match_run_dir(run_id).mkdir(parents=True, exist_ok=True)
-    async with aiofiles.open(match_run_manifest_path(run_id), "w", encoding="utf-8") as f:
-        await f.write(json.dumps(manifest, indent=2) + "\n")
+    path = match_run_manifest_path(run_id)
+    payload = json.dumps(manifest, indent=2) + "\n"
+    tmp_path = path.with_suffix(".json.tmp")
+    async with aiofiles.open(tmp_path, "w", encoding="utf-8") as f:
+        await f.write(payload)
+    os.replace(tmp_path, path)
 
 
 async def read_manifest(run_id: str) -> dict | None:
@@ -403,8 +408,9 @@ async def run_scorer_phase(run_id: str, mode: str, queue_items: list[dict]) -> l
     try:
         results = await matcher_client.analyze(mode, jobs, run_id)
     except Exception as exc:
-        await append_match_run_log(run_id, f"[score] failed | {exc}")
-        raise RuntimeError(str(exc)) from exc
+        message = str(exc) or type(exc).__name__
+        await append_match_run_log(run_id, f"[score] failed | {message}")
+        raise RuntimeError(message) from exc
 
     for row in results:
         # The matcher tags analysis.pipeline with its own model-agnostic
@@ -514,6 +520,14 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
         await write_manifest(run_id, manifest)
 
 
+async def _fail_manifest(run_id: str, exc: Exception) -> None:
+    manifest = await read_manifest(run_id) or {"id": run_id}
+    message = str(exc) or type(exc).__name__
+    await write_manifest(
+        run_id, {**manifest, "status": STATUS_FAILED, "error": message, "updated_at": _now_iso()}
+    )
+
+
 async def execute_match_run(run_id: str, jobs: list[dict], mode: str) -> None:
     manifest = await read_manifest(run_id)
     if manifest is None:
@@ -528,6 +542,8 @@ async def execute_match_run(run_id: str, jobs: list[dict], mode: str) -> None:
         await write_manifest(run_id, manifest)
 
         await _run_scored_pipeline(run_id, manifest, jobs, mode)
+    except Exception as exc:
+        await _fail_manifest(run_id, exc)
     finally:
         active_run_ids.discard(run_id)
 
@@ -553,5 +569,7 @@ async def execute_match_run_from_input(run_id: str, input_lines: list[str], mode
         await write_manifest(run_id, manifest)
 
         await _run_scored_pipeline(run_id, manifest, jobs_for_queue, mode)
+    except Exception as exc:
+        await _fail_manifest(run_id, exc)
     finally:
         active_run_ids.discard(run_id)

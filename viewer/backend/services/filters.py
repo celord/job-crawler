@@ -35,17 +35,57 @@ def parse_title_query(raw: str) -> list[dict]:
     return tokens
 
 
-def _fts_escape(term: str) -> str:
-    return '"' + term.replace('"', '""') + '"'
-
-
-def _is_simple_fts_query(tokens: list[dict]) -> bool:
-    return len(tokens) > 0 and all(len(t["terms"]) == 1 and not t["exclude"] for t in tokens)
-
-
 def _parse_int(raw: str) -> int | None:
     match = _LEADING_INT_RE.match(raw.strip())
     return int(match.group(0)) if match else None
+
+
+_SLUG_SEPARATORS = ("-", "_", ".", "/", " ")
+
+
+def _escape_like(text: str) -> str:
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _company_slug_condition() -> str:
+    return " OR ".join(["LOWER(source_key) LIKE ? ESCAPE '\\'"] * (1 + len(_SLUG_SEPARATORS)))
+
+
+def _company_slug_patterns(term: str) -> list[str]:
+    escaped = _escape_like(term.lower())
+    return [f"{escaped}%"] + [f"%{_escape_like(sep)}{escaped}%" for sep in _SLUG_SEPARATORS]
+
+
+_LOCATION_SEPARATORS = (",", "-", "/", "(", ")", ".")
+
+
+_TITLE_SEPARATORS = (",", "-", "/", "(", ")", ".", "_", "&", "+", ":", ";", "|")
+
+
+def _word_boundary_text(column: str, separators: tuple[str, ...]) -> str:
+    text = f"LOWER({column})"
+    for sep in separators:
+        text = f"REPLACE({text}, '{sep}', ' ')"
+    return f"(' ' || {text} || ' ')"
+
+
+def _title_word_condition(negated: bool) -> str:
+    operator = "NOT LIKE" if negated else "LIKE"
+    return f"{_word_boundary_text('title', _TITLE_SEPARATORS)} {operator} ? ESCAPE '\\'"
+
+
+def _title_word_pattern(term: str) -> str:
+    return f"% {_escape_like(term.lower())}%"
+
+
+def _location_word_condition() -> str:
+    return f"{_word_boundary_text('location', _LOCATION_SEPARATORS)} LIKE ? ESCAPE '\\'"
+
+
+def _location_word_pattern(term: str) -> str:
+    for sep in _LOCATION_SEPARATORS:
+        term = term.replace(sep, " ")
+    return f"% {_escape_like(term.strip().lower())} %"
 
 
 def add_job_filter_conditions(
@@ -75,47 +115,41 @@ def add_job_filter_conditions(
     )
 
     if title.strip():
-        tokens = parse_title_query(title)
-
-        if _is_simple_fts_query(tokens):
-            fts_query = " ".join(_fts_escape(t["terms"][0]) for t in tokens)
-            conditions.append("rowid IN (SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?)")
-            params.append(f"title:{fts_query}")
-        else:
-            for token in tokens:
-                terms = token["terms"]
-                if len(terms) == 1:
-                    conditions.append(
-                        "LOWER(title) NOT LIKE ?" if token["exclude"] else "LOWER(title) LIKE ?"
-                    )
-                    params.append(f"%{terms[0]}%")
-                elif token["exclude"]:
-                    conditions.append("(" + " AND ".join("LOWER(title) NOT LIKE ?" for _ in terms) + ")")
-                    params.extend(f"%{t}%" for t in terms)
-                else:
-                    conditions.append("(" + " OR ".join("LOWER(title) LIKE ?" for _ in terms) + ")")
-                    params.extend(f"%{t}%" for t in terms)
+        for token in parse_title_query(title):
+            terms = token["terms"]
+            if token["exclude"]:
+                conditions.append(
+                    "(" + " AND ".join(_title_word_condition(negated=True) for _ in terms) + ")"
+                )
+            else:
+                conditions.append(
+                    "(" + " OR ".join(_title_word_condition(negated=False) for _ in terms) + ")"
+                )
+            params.extend(_title_word_pattern(t) for t in terms)
 
     # Location: match jobs near my_location OR remote jobs (if include_remote).
     # Empty my_location + include_remote -> remote only.
     # my_location set + include_remote False -> on-site/hybrid near my_location only.
     if my_location or not include_remote:
         loc_terms = [loc.strip() for loc in my_location.split(",") if loc.strip()] if my_location else []
-        loc_clauses = ["LOWER(location) LIKE ?" for _ in loc_terms]
+        loc_terms = [loc for loc in loc_terms if _location_word_pattern(loc).strip("% ")]
+        loc_clauses = [_location_word_condition() for _ in loc_terms]
         if include_remote:
             conditions.append("(" + " OR ".join([*loc_clauses, "is_remote = 1"]) + ")")
-            params.extend(f"%{loc.lower()}%" for loc in loc_terms)
+            for loc in loc_terms:
+                params.append(_location_word_pattern(loc))
         elif loc_clauses:
             conditions.append("(" + " OR ".join(loc_clauses) + ")")
-            params.extend(f"%{loc.lower()}%" for loc in loc_terms)
+            params.extend(_location_word_pattern(loc) for loc in loc_terms)
         else:
             # remote excluded and no location given -> impossible filter, return nothing
             conditions.append("1 = 0")
 
     if company.strip():
         companies = [c.strip() for c in company.split(",") if c.strip()]
-        conditions.append("(" + " OR ".join("LOWER(source_key) LIKE ?" for _ in companies) + ")")
-        params.extend(f"%{c.lower()}%" for c in companies)
+        conditions.append("(" + " OR ".join(_company_slug_condition() for _ in companies) + ")")
+        for c in companies:
+            params.extend(_company_slug_patterns(c))
 
     if sources_str.strip():
         provider_list = [s.strip() for s in sources_str.split(",") if s.strip()]
@@ -126,7 +160,7 @@ def add_job_filter_conditions(
     if days_str.strip():
         n = _parse_int(days_str)
         if n is not None and n > 0:
-            conditions.append("COALESCE(posted_at, first_seen_at) >= datetime('now', ?)")
+            conditions.append("datetime(COALESCE(posted_at, first_seen_at)) >= datetime('now', ?)")
             params.append(f"-{n} days")
 
     # types: canonical employment types to show. NULLs always included.
