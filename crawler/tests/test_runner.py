@@ -395,3 +395,27 @@ async def test_worker_steals_next_item_instead_of_waiting_on_static_partition(tm
     # work-stealing pattern, the idle worker claims fast1 immediately after slow is claimed, so it
     # finishes well before slow does.
     assert order.index("fast1") < order.index("slow")
+
+
+@pytest.mark.asyncio
+async def test_empty_source_list_does_not_wipe_existing_catalog(tmp_path):
+    from catalog_store import CatalogStore
+
+    (tmp_path / "sources").mkdir()
+    (tmp_path / "state").mkdir()
+    store = CatalogStore(str(tmp_path / "state" / "catalog.sqlite"))
+    store.record_jobs(
+        [NormalizedJob(provider="greenhouse", source_key="acme", job_id="1", fetched_at="x", title="T")],
+        "previous_run",
+    )
+    store.close()
+
+    with pytest.raises(RuntimeError, match="no sources"):
+        await runner_module.run_crawler(_options(tmp_path))
+
+    rows = (
+        sqlite3.connect(str(tmp_path / "state" / "catalog.sqlite"))
+        .execute("SELECT COUNT(*) FROM catalog_jobs")
+        .fetchone()[0]
+    )
+    assert rows == 1
