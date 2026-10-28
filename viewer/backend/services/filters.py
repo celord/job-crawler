@@ -160,7 +160,7 @@ def add_job_filter_conditions(
     if days_str.strip():
         n = _parse_int(days_str)
         if n is not None and n > 0:
-            conditions.append("COALESCE(posted_at, first_seen_at) >= datetime('now', ?)")
+            conditions.append("datetime(COALESCE(posted_at, first_seen_at)) >= datetime('now', ?)")
             params.append(f"-{n} days")
 
     # types: canonical employment types to show. NULLs always included.

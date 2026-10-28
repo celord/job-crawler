@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -271,3 +272,33 @@ def test_conditions_combine_with_and():
     assert " AND " in where
     assert params[-1] == "-30 days"
     assert "acme%" in params
+
+
+def _posted_at_matching(days: int, posted: list[str]) -> list[str]:
+    where, params = add_job_filter_conditions(days=days)
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE catalog_jobs (posted_at TEXT, first_seen_at TEXT)")
+    conn.executemany("INSERT INTO catalog_jobs VALUES (?, ?)", [(p, p) for p in posted])
+    return sorted(r[0] for r in conn.execute(f"SELECT posted_at FROM catalog_jobs {where}", params))
+
+
+def test_days_filter_compares_timestamps_across_offsets():
+    now = datetime.now(UTC)
+    within = now - timedelta(days=7) + timedelta(hours=1)
+    outside = now - timedelta(days=8)
+    formats = [
+        "%Y-%m-%dT%H:%M:%S.%fZ",
+        "%Y-%m-%dT%H:%M:%S-12:00",
+        "%Y-%m-%dT%H:%M:%S+14:00",
+    ]
+
+    def stamp(moment: datetime, fmt: str) -> str:
+        if fmt.endswith("-12:00"):
+            moment = moment - timedelta(hours=12)
+        elif fmt.endswith("+14:00"):
+            moment = moment + timedelta(hours=14)
+        return moment.strftime(fmt)
+
+    for fmt in formats:
+        assert _posted_at_matching(7, [stamp(within, fmt)]) == [stamp(within, fmt)], fmt
+        assert _posted_at_matching(7, [stamp(outside, fmt)]) == [], fmt
