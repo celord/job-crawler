@@ -1,10 +1,10 @@
 # 07: Company filter matches name or slug
 
-**What to build:** The company filter finds a company by display name or ATS slug.
+**What to build:** The company filter finds a company by its ATS slug, matched at a word start. Display-name matching is out of scope (no display-name column exists).
 
 **Blocked by:** None (can start immediately)
 
-**Status:** done (option 1, see Outcome)
+**Status:** done (option 1, slug-only, confirmed by owner)
 
 - [x] "Meta" finds a job whose slug is "metacareers"
 
