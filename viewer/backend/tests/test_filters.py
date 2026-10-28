@@ -1,5 +1,7 @@
 import sqlite3
 
+import pytest
+
 from services.filters import add_job_filter_conditions, parse_title_query
 
 
@@ -37,24 +39,72 @@ def test_add_job_filter_conditions_empty_returns_no_where():
     assert params == []
 
 
-def test_add_job_filter_conditions_simple_title_uses_fts():
-    where, params = add_job_filter_conditions(title="backend")
-    assert "catalog_jobs_fts" in where
-    assert params == ['title:"backend"']
-
-
-def test_add_job_filter_conditions_multiword_title_uses_like():
-    where, params = add_job_filter_conditions(title="-intern (pm,tpm)")
-    assert "catalog_jobs_fts" not in where
-    assert "NOT LIKE" in where
-    assert "OR" in where
-    assert params == ["%intern%", "%pm%", "%tpm%"]
+def test_add_job_filter_conditions_title_never_uses_fts():
+    for query in ["backend", "-intern (pm,tpm)", "-(intern,contract)"]:
+        where, _ = add_job_filter_conditions(title=query)
+        assert "catalog_jobs_fts" not in where
 
 
 def test_add_job_filter_conditions_negated_group_is_and_not_like():
     where, params = add_job_filter_conditions(title="-(intern,contract)")
     assert "AND" in where
-    assert params == ["%intern%", "%contract%"]
+    assert params == ["% intern%", "% contract%"]
+
+
+def _titles_matching(query: str, titles: list[str]) -> list[str]:
+    where, params = add_job_filter_conditions(title=query)
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE catalog_jobs (title TEXT)")
+    db.executemany("INSERT INTO catalog_jobs (title) VALUES (?)", [(t,) for t in titles])
+    return [row[0] for row in db.execute(f"SELECT title FROM catalog_jobs {where}", params)]
+
+
+_CATALOG_TITLES = [
+    "Engineering Manager",
+    "Software Engineer",
+    "Reengineering Lead",
+    "Senior Engineer",
+    "Senior Principal Engineer",
+    "Senior Staff Engineer",
+    "React Developer",
+    "Vue Lead",
+    "Angular Developer",
+    "Data Engineer",
+    "Senior Data Scientist",
+    "Intern Engineer",
+    "Contract Engineer",
+    "Engineer, Platform",
+]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "engineer",
+            [
+                "Engineering Manager",
+                "Software Engineer",
+                "Senior Engineer",
+                "Senior Principal Engineer",
+                "Senior Staff Engineer",
+                "Data Engineer",
+                "Intern Engineer",
+                "Contract Engineer",
+                "Engineer, Platform",
+            ],
+        ),
+        ("senior -principal", ["Senior Engineer", "Senior Staff Engineer", "Senior Data Scientist"]),
+        ("(react,vue)", ["React Developer", "Vue Lead"]),
+        ("data eng", ["Data Engineer"]),
+        (
+            "-(intern,contract)",
+            [t for t in _CATALOG_TITLES if t not in ("Intern Engineer", "Contract Engineer")],
+        ),
+    ],
+)
+def test_title_query_uses_one_word_prefix_rule(query, expected):
+    assert _titles_matching(query, _CATALOG_TITLES) == [t for t in _CATALOG_TITLES if t in expected]
 
 
 def _locations_matching(my_location: str, locations: list[str], include_remote: bool = False) -> list[str]:

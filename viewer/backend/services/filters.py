@@ -35,14 +35,6 @@ def parse_title_query(raw: str) -> list[dict]:
     return tokens
 
 
-def _fts_escape(term: str) -> str:
-    return '"' + term.replace('"', '""') + '"'
-
-
-def _is_simple_fts_query(tokens: list[dict]) -> bool:
-    return len(tokens) > 0 and all(len(t["terms"]) == 1 and not t["exclude"] for t in tokens)
-
-
 def _parse_int(raw: str) -> int | None:
     match = _LEADING_INT_RE.match(raw.strip())
     return int(match.group(0)) if match else None
@@ -67,11 +59,27 @@ def _company_slug_patterns(term: str) -> list[str]:
 _LOCATION_SEPARATORS = (",", "-", "/", "(", ")", ".")
 
 
-def _location_word_condition() -> str:
-    text = "LOWER(location)"
-    for sep in _LOCATION_SEPARATORS:
+_TITLE_SEPARATORS = (",", "-", "/", "(", ")", ".", "_", "&", "+", ":", ";", "|")
+
+
+def _word_boundary_text(column: str, separators: tuple[str, ...]) -> str:
+    text = f"LOWER({column})"
+    for sep in separators:
         text = f"REPLACE({text}, '{sep}', ' ')"
-    return f"(' ' || {text} || ' ') LIKE ? ESCAPE '\\'"
+    return f"(' ' || {text} || ' ')"
+
+
+def _title_word_condition(negated: bool) -> str:
+    operator = "NOT LIKE" if negated else "LIKE"
+    return f"{_word_boundary_text('title', _TITLE_SEPARATORS)} {operator} ? ESCAPE '\\'"
+
+
+def _title_word_pattern(term: str) -> str:
+    return f"% {_escape_like(term.lower())}%"
+
+
+def _location_word_condition() -> str:
+    return f"{_word_boundary_text('location', _LOCATION_SEPARATORS)} LIKE ? ESCAPE '\\'"
 
 
 def _location_word_pattern(term: str) -> str:
@@ -107,26 +115,17 @@ def add_job_filter_conditions(
     )
 
     if title.strip():
-        tokens = parse_title_query(title)
-
-        if _is_simple_fts_query(tokens):
-            fts_query = " ".join(_fts_escape(t["terms"][0]) for t in tokens)
-            conditions.append("rowid IN (SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?)")
-            params.append(f"title:{fts_query}")
-        else:
-            for token in tokens:
-                terms = token["terms"]
-                if len(terms) == 1:
-                    conditions.append(
-                        "LOWER(title) NOT LIKE ?" if token["exclude"] else "LOWER(title) LIKE ?"
-                    )
-                    params.append(f"%{terms[0]}%")
-                elif token["exclude"]:
-                    conditions.append("(" + " AND ".join("LOWER(title) NOT LIKE ?" for _ in terms) + ")")
-                    params.extend(f"%{t}%" for t in terms)
-                else:
-                    conditions.append("(" + " OR ".join("LOWER(title) LIKE ?" for _ in terms) + ")")
-                    params.extend(f"%{t}%" for t in terms)
+        for token in parse_title_query(title):
+            terms = token["terms"]
+            if token["exclude"]:
+                conditions.append(
+                    "(" + " AND ".join(_title_word_condition(negated=True) for _ in terms) + ")"
+                )
+            else:
+                conditions.append(
+                    "(" + " OR ".join(_title_word_condition(negated=False) for _ in terms) + ")"
+                )
+            params.extend(_title_word_pattern(t) for t in terms)
 
     # Location: match jobs near my_location OR remote jobs (if include_remote).
     # Empty my_location + include_remote -> remote only.
