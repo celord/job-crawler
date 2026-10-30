@@ -3,6 +3,7 @@ import re
 
 import pytest
 
+import config
 from services import match_run as mr
 from services import matcher_client, queue_store
 from tests.conftest import insert_job
@@ -458,7 +459,10 @@ async def test_execute_match_run_partial_failure_does_not_raise(mocked_matcher, 
     assert manifest["matched_count"] == 1
 
 
-async def test_execute_match_run_all_error_flips_manifest_failed(mocked_matcher, isolated_env):
+async def test_execute_match_run_all_error_retries_when_auto_retry_enabled(
+    mocked_matcher, isolated_env, monkeypatch
+):
+    monkeypatch.setattr(config, "AUTO_RETRY_ENABLED", True)
     run_id = "run_allerr"
     await mr.write_manifest(
         run_id,
@@ -492,6 +496,41 @@ async def test_execute_match_run_all_error_flips_manifest_failed(mocked_matcher,
     items = await queue_store.read_queue()
     assert items[0]["status"] == "retrying"
     assert items[0]["attempt"] == 2
+
+
+async def test_execute_match_run_failure_is_permanent_by_default(mocked_matcher, isolated_env, monkeypatch):
+    monkeypatch.setattr(config, "AUTO_RETRY_ENABLED", False)
+    run_id = "run_noretry"
+    await mr.write_manifest(
+        run_id,
+        {
+            "id": run_id,
+            "status": "pending",
+            "mode": "claude-ensemble",
+            "job_count": 1,
+            "parsed_count": 0,
+            "matched_count": 0,
+            "created_at": "x",
+            "updated_at": "x",
+            "error": None,
+        },
+    )
+    err_line = json.dumps(
+        {
+            "provider": "gh",
+            "source_key": "acme",
+            "job_id": "2",
+            "title": "Err",
+            "company": "acme",
+            "_force_error": True,
+        }
+    )
+
+    await mr.execute_match_run_from_input(run_id, [err_line], "claude-ensemble")
+
+    items = await queue_store.read_queue()
+    assert items[0]["status"] == "permanent_error"
+    assert items[0]["next_retry_at"] is None
 
 
 async def test_execute_match_run_missing_manifest_is_noop(mocked_matcher):

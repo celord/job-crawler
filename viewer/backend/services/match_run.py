@@ -504,7 +504,7 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
         err_msg = str(exc)
         for item in queue_items:
             next_attempt = item["attempt"] + 1
-            is_permanent = next_attempt >= item["max_attempts"]
+            is_permanent = not config.AUTO_RETRY_ENABLED or next_attempt >= item["max_attempts"]
             item["attempt"] = next_attempt
             item["status"] = "permanent_error" if is_permanent else "retrying"
             item["next_retry_at"] = None if is_permanent else queue_store.next_retry_at(next_attempt)

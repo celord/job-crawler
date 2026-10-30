@@ -119,6 +119,21 @@ async def test_find_next_saved_search_job_skips_queued(env, migrated_env):
     assert result is None
 
 
+async def test_find_next_saved_search_job_skips_permanent_error(env, migrated_env):
+    from pathlib import Path
+
+    Path(config.SAVED_SEARCHES_PATH).write_text(json.dumps([{"id": "s1", "label": "S1"}]))
+    insert_job(
+        migrated_env["catalog_db"], job_id="1", job_url="https://x/1", first_seen_at="2099-01-01T00:00:00Z"
+    )
+    await queue_store.upsert_queue_item(
+        {"id": "run:x", "job_key": "greenhouse|acme|1", "status": "permanent_error"}
+    )
+
+    result = await saved_search.find_next_saved_search_job()
+    assert result is None
+
+
 async def test_find_next_saved_search_job_no_searches_returns_none(env):
     assert await saved_search.find_next_saved_search_job() is None
 

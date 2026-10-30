@@ -21,7 +21,9 @@ LOGO_DEV_PUBLISHABLE_KEY = os.environ.get("LOGO_DEV_PUBLISHABLE_KEY")
 LOGO_DEV_SECRET_KEY = os.environ.get("LOGO_DEV_SECRET_KEY")
 USER_LOCATION = os.environ.get("USER_LOCATION")
 
-SAVED_SEARCH_ANALYZER_ENABLED = os.environ.get("SAVED_SEARCH_ANALYZER_ENABLED", "1") != "0"
+SAVED_SEARCH_ANALYZER_ENABLED = os.environ.get("SAVED_SEARCH_ANALYZER_ENABLED", "0") == "1"
+# Failed match runs retry automatically only when "1". Off by default so LLM calls happen on click.
+AUTO_RETRY_ENABLED = os.environ.get("AUTO_RETRY_ENABLED", "0") == "1"
 SAVED_SEARCH_ANALYZER_INTERVAL_MS = int(os.environ.get("SAVED_SEARCH_ANALYZER_INTERVAL_MS", "60000"))
 
 SKIP_TIERS = os.environ.get("SKIP_TIERS", "intern")
