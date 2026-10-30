@@ -7,7 +7,7 @@ Legend: **[x]** verified in browser on the frontend-next preview · **[ ]** stil
 ## Feed and filters
 - [x] Feed loads from `/api/jobs`, shows rows, no console errors
 - [x] Filters restore from URL on reload (`?title=…&remote=0&page=2`)
-- [ ] Each filter (provider, tiers, employment type, age, score, evaluated, include/exclude, location, company) changes results as the old frontend does — 2026-10-29: provider, title, company verified; evaluated-only returns "No jobs match" (not compared to old frontend). Not yet: location, tiers, employment type, age, score, include/exclude.
+- [ ] Each filter (provider, tiers, employment type, age, score, evaluated, include/exclude, location, company) changes results as the old frontend does — 2026-10-29: verified in UI: provider, title, company, location (`myLoc`), tier (intern), employment (full time), include keyword (`inc`). Verified against `/api/jobs` totals only (no UI): age (`days=7`: 230,837 of 588,783), exclude keyword (`exc=senior`: 371,616). Not verifiable: score (4plus) and evaluated return 0 because the catalog has no scored jobs (`analysis_score` and `job_analyses` both empty). Not compared against the old frontend.
 - [x] "Clear all" resets filters and URL — 2026-10-29
 
 ## Saved searches
@@ -18,16 +18,16 @@ Legend: **[x]** verified in browser on the frontend-next preview · **[ ]** stil
 ## Hide, visit, favourite (localStorage, key `job-viewer-local-store`)
 - [x] Hidden job stays hidden after reload
 - [ ] Visited marker appears after clicking a title, survives reload — 2026-10-29: marker (`job-card-visited`) appears and is stored; visual state after reload not checked.
-- [ ] Favourite star toggles, survives reload; Favorites modal add/remove works — 2026-10-29: star toggles, toast shows, persists after reload; modal opens and lists favourites. Add/remove in modal not tested.
+- [ ] Favourite star toggles, survives reload; Favorites modal add/remove works — 2026-10-29: star toggles, toast shows, persists after reload; modal opens, add and remove both update storage. Verified.
 
 ## Analysis panel and paste-JD
-- [ ] Score badge opens panel with score, scorecard, verdict (needs a scored job on page)
-- [ ] Re-run queues a run and reports a toast
-- [ ] Paste-JD dialog opens, Analyze queues a run; failure shows a toast with reason
+- [ ] Score badge opens panel with score, scorecard, verdict (needs a scored job on page) — 2026-10-29: blocked. No scored jobs in catalog. Panel opens from a queue item and shows the "Not yet analyzed" state; score and verdict not reached.
+- [ ] Re-run queues a run and reports a toast — 2026-10-29: not tested (queues a real run).
+- [ ] Paste-JD dialog opens, Analyze queues a run; failure shows a toast with reason — 2026-10-29: blocked. Paste JD only appears for unparsed jobs. Reaching one's panel needs Analyze (queues a run). Not tested.
 
 ## Queue drawer
 - [x] Queue button opens and closes the drawer
-- [ ] Queue items show status and failure reason; Retry / Stop / Restart / Dismiss each toast success or failure — 2026-10-29: status and failure reason display verified. Actions not tested (they change queue data).
+- [ ] Queue items show status and failure reason; Retry / Stop / Restart / Dismiss each toast success or failure — 2026-10-29: status and failure reason display verified. Actions not tested (they change queue data). Note: queue has hundreds of auto-analyzer `permanent_error` items, which makes the drawer noisy.
 
 ## Toasts
 - [x] Hide shows a toast with working Undo (covered by code path; confirm Undo in browser) — 2026-10-29: Hide and favourite toasts shown; Undo button not clicked.
