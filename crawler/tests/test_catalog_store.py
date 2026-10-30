@@ -156,3 +156,33 @@ def test_record_jobs_wraps_in_transaction_rolls_back_on_error(tmp_path, monkeypa
     rows = store.db.execute("SELECT job_id FROM catalog_jobs").fetchall()
     assert rows == []  # the whole batch rolled back, not a partial commit
     store.close()
+
+
+def test_is_remote_set_when_location_says_remote(tmp_path):
+    store = CatalogStore(str(tmp_path / "catalog.sqlite"))
+    store.record_jobs([_job(job_id="1", location="Remote, USA")], "run1")
+    store.record_jobs([_job(job_id="2", location="Remote North America")], "run1")
+    rows = store.db.execute("SELECT job_id, is_remote FROM catalog_jobs ORDER BY job_id").fetchall()
+    assert rows == [("1", 1), ("2", 1)]
+    store.close()
+
+
+def test_is_remote_zero_for_on_site_location(tmp_path):
+    store = CatalogStore(str(tmp_path / "catalog.sqlite"))
+    store.record_jobs([_job(location="Taipei, Taiwan")], "run1")
+    assert store.db.execute("SELECT is_remote FROM catalog_jobs").fetchone()[0] == 0
+    store.close()
+
+
+def test_is_remote_null_without_location(tmp_path):
+    store = CatalogStore(str(tmp_path / "catalog.sqlite"))
+    store.record_jobs([_job(location=None)], "run1")
+    assert store.db.execute("SELECT is_remote FROM catalog_jobs").fetchone()[0] is None
+    store.close()
+
+
+def test_is_remote_does_not_match_inside_words(tmp_path):
+    store = CatalogStore(str(tmp_path / "catalog.sqlite"))
+    store.record_jobs([_job(location="Remotely hosted, Berlin")], "run1")
+    assert store.db.execute("SELECT is_remote FROM catalog_jobs").fetchone()[0] == 0
+    store.close()

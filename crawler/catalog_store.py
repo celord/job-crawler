@@ -21,6 +21,7 @@ from pathlib import Path
 from geo import resolve_coords
 from models import NormalizedJob
 from normalizers import canonicalize_employment_type, classify_tier
+from remote import is_remote_location
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS catalog_jobs (
@@ -55,12 +56,12 @@ INSERT INTO catalog_jobs (
     provider, source_key, job_id, title, location, employment_type,
     compensation, department, office, language, updated_at, posted_at,
     job_url, fetched_at, first_seen_at, last_seen_at, seen_run_id,
-    raw_json, skill_tier, employment_type_canonical, lat, lon
+    raw_json, skill_tier, employment_type_canonical, lat, lon, is_remote
 ) VALUES (
     :provider, :source_key, :job_id, :title, :location, :employment_type,
     :compensation, :department, :office, :language, :updated_at, :posted_at,
     :job_url, :fetched_at, :first_seen_at, :last_seen_at, :seen_run_id,
-    :raw_json, :skill_tier, :employment_type_canonical, :lat, :lon
+    :raw_json, :skill_tier, :employment_type_canonical, :lat, :lon, :is_remote
 )
 ON CONFLICT(provider, source_key, job_id) DO UPDATE SET
     title = excluded.title,
@@ -79,7 +80,8 @@ ON CONFLICT(provider, source_key, job_id) DO UPDATE SET
     skill_tier = excluded.skill_tier,
     employment_type_canonical = excluded.employment_type_canonical,
     lat = excluded.lat,
-    lon = excluded.lon
+    lon = excluded.lon,
+    is_remote = excluded.is_remote
 """
 
 _SELECT_ALL_SQL = """
@@ -107,6 +109,7 @@ class CatalogStore:
         self._ensure_column("catalog_jobs", "employment_type_canonical", "TEXT")
         self._ensure_column("catalog_jobs", "lat", "REAL")
         self._ensure_column("catalog_jobs", "lon", "REAL")
+        self._ensure_column("catalog_jobs", "is_remote", "INTEGER")
 
     def _ensure_column(self, table: str, column: str, definition: str) -> None:
         rows = self.db.execute(f"PRAGMA table_info({table})").fetchall()
@@ -146,6 +149,7 @@ class CatalogStore:
                         "employment_type_canonical": canonicalize_employment_type(job.employment_type),
                         "lat": lat,
                         "lon": lon,
+                        "is_remote": is_remote_location(job.location),
                     },
                 )
 

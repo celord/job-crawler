@@ -206,6 +206,9 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
         progress_task = asyncio.create_task(progress_loop()) if options.progress_every_ms > 0 else None
 
         try:
+            if not items:
+                # finalize_run deletes every row from other runs; an empty run would wipe the catalog.
+                raise RuntimeError("no sources loaded; refusing to finalize the run and delete the catalog")
             await asyncio.gather(*(worker() for _ in range(worker_count)))
             catalog_store.finalize_run(started_at)
         finally:
