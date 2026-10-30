@@ -27,11 +27,11 @@ Legend: **[x]** verified in browser on the frontend-next preview · **[ ]** stil
 
 ## Queue drawer
 - [x] Queue button opens and closes the drawer
-- [ ] Queue items show status and failure reason; Retry / Stop / Restart / Dismiss each toast success or failure — 2026-10-29: status and failure reason display verified. Actions not tested (they change queue data). Note: queue has hundreds of auto-analyzer `permanent_error` items, which makes the drawer noisy.
+- [ ] Queue items show status and failure reason; Retry / Stop / Restart / Dismiss each toast success or failure — 2026-10-29: status and failure reason display verified. 2026-10-29 (cost-limited pass): Dismiss verified, removes the row and shows a success toast ("Dismissed …"). Stop not testable: the button only shows on `running` items, and none were running. Retry and Restart not tested (each starts a matcher run, which calls the LLM). Queue has hundreds of auto-analyzer `permanent_error` items, which makes the drawer noisy.
 
 ## Toasts
 - [x] Hide shows a toast with working Undo (covered by code path; confirm Undo in browser) — 2026-10-29: Hide and favourite toasts shown; Undo button not clicked.
-- [ ] Every action (analyze, re-run, queue actions, paste-JD, favourites, auto-analyzer) shows a success or failure toast — 2026-10-29: favourite, hide, and analyze ("Analysis queued.") toasts seen. Others not tested.
+- [ ] Every action (analyze, re-run, queue actions, paste-JD, favourites, auto-analyzer) shows a success or failure toast — 2026-10-29: favourite, hide, analyze ("Analysis queued.") and dismiss toasts seen. Retry, Restart, Stop, and paste-JD submit not tested (they start LLM runs or were not reachable).
 
 ## Pagination
 - [x] Out-of-range page shows "Page N of M" (no crash)
