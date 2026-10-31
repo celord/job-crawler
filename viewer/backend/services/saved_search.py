@@ -75,7 +75,9 @@ async def find_next_saved_search_job() -> dict | None:
 
     queue_items = await queue_store.read_queue()
     active_queue_keys = {
-        item["job_key"] for item in queue_items if item.get("status") in ("running", "todo", "retrying")
+        item["job_key"]
+        for item in queue_items
+        if item.get("status") in ("running", "todo", "retrying", "permanent_error")
     }
 
     for search in searches:
