@@ -72,6 +72,7 @@ export function useMergedSearchJobs(activeSearches: SavedSearch[]) {
   });
 
   const isLoading = results.some((r) => r.isLoading);
+  const isFetching = results.some((r) => r.isFetching);
   const jobs: Job[] = [];
   const seen = new Set<string>();
   for (const result of results) {
@@ -83,5 +84,5 @@ export function useMergedSearchJobs(activeSearches: SavedSearch[]) {
       }
     }
   }
-  return { jobs, isLoading, total: jobs.length };
+  return { jobs, isLoading, isFetching, total: jobs.length };
 }

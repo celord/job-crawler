@@ -9,7 +9,7 @@ import config
 from db import fetchall, fetchone
 from services.analysis import best_analysis, get_analysis_cache
 from services.company import sanitize_job
-from services.filters import ORDER_BY_CLAUSE, add_job_filter_conditions
+from services.filters import ORDER_BY_CLAUSE, add_job_filter_conditions, title_fts_query
 
 router = APIRouter(prefix="/api")
 
@@ -84,7 +84,34 @@ async def list_jobs(
         score=score,
     )
 
-    total_row = await fetchone(f"SELECT COUNT(*) AS n FROM catalog_jobs {where}", params)
+    fts_query = title_fts_query(title)
+    other_where = ""
+    if fts_query is not None:
+        other_where, _ = add_job_filter_conditions(
+            my_location=myLoc,
+            include_remote=include_remote,
+            company=company,
+            sources=sources,
+            days=days,
+            fav_companies=fav_list,
+            include=inc,
+            exclude=exc,
+            tiers=tiers,
+            types=types,
+            evaluated=evaluated_flag,
+            score=score,
+        )
+
+    if fts_query is not None and other_where == "":
+        # Counting FTS matches directly avoids 70k+ random row lookups that
+        # a filtered COUNT over the content table would need for text-only
+        # searches.
+        total_row = await fetchone(
+            "SELECT COUNT(*) AS n FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?",
+            [fts_query],
+        )
+    else:
+        total_row = await fetchone(f"SELECT COUNT(*) AS n FROM catalog_jobs {where}", params)
     total = total_row["n"] if total_row else 0
 
     rows = await fetchall(

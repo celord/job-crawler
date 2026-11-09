@@ -59,9 +59,6 @@ def _company_slug_patterns(term: str) -> list[str]:
 _LOCATION_SEPARATORS = (",", "-", "/", "(", ")", ".")
 
 
-_TITLE_SEPARATORS = (",", "-", "/", "(", ")", ".", "_", "&", "+", ":", ";", "|")
-
-
 def _word_boundary_text(column: str, separators: tuple[str, ...]) -> str:
     text = f"LOWER({column})"
     for sep in separators:
@@ -69,13 +66,32 @@ def _word_boundary_text(column: str, separators: tuple[str, ...]) -> str:
     return f"(' ' || {text} || ' ')"
 
 
-def _title_word_condition(negated: bool) -> str:
-    operator = "NOT LIKE" if negated else "LIKE"
-    return f"{_word_boundary_text('title', _TITLE_SEPARATORS)} {operator} ? ESCAPE '\\'"
+def _fts_phrase(term: str) -> str:
+    # FTS5 double-quoted strings escape an embedded quote by doubling it.
+    return f'"{term.replace(chr(34), chr(34) * 2)}"*'
 
 
-def _title_word_pattern(term: str) -> str:
-    return f"% {_escape_like(term.lower())}%"
+def title_fts_query(raw: str | None) -> str | None:
+    """One FTS5 MATCH expression for all title tokens, or None for
+    pure-negation queries (FTS5 has no unary NOT to anchor them)."""
+    tokens = parse_title_query(raw or "")
+    positive: list[str] = []
+    negative: list[str] = []
+    for token in tokens:
+        phrases = [_fts_phrase(term.lower()) for term in token["terms"]]
+        group = phrases[0] if len(phrases) == 1 else "(" + " OR ".join(phrases) + ")"
+        (negative if token["exclude"] else positive).append(group)
+    if not positive:
+        return None
+    query = " AND ".join(positive)
+    if negative:
+        query = f"({query}) NOT ({' OR '.join(negative)})"
+    return query
+
+
+def _title_fts_condition(negated: bool) -> str:
+    operator = "NOT IN" if negated else "IN"
+    return f"rowid {operator} " "(SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?)"
 
 
 def _location_word_condition() -> str:
@@ -117,15 +133,8 @@ def add_job_filter_conditions(
     if title.strip():
         for token in parse_title_query(title):
             terms = token["terms"]
-            if token["exclude"]:
-                conditions.append(
-                    "(" + " AND ".join(_title_word_condition(negated=True) for _ in terms) + ")"
-                )
-            else:
-                conditions.append(
-                    "(" + " OR ".join(_title_word_condition(negated=False) for _ in terms) + ")"
-                )
-            params.extend(_title_word_pattern(t) for t in terms)
+            conditions.append(_title_fts_condition(negated=token["exclude"]))
+            params.append(" OR ".join(_fts_phrase(term.lower()) for term in terms))
 
     # Location: match jobs near my_location OR remote jobs (if include_remote).
     # Empty my_location + include_remote -> remote only.

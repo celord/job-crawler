@@ -84,6 +84,21 @@ async def _add_column_if_missing(column: str, sql_type: str) -> None:
             raise
 
 
+_FTS_STATEMENTS = [
+    "CREATE VIRTUAL TABLE IF NOT EXISTS catalog_jobs_fts USING fts5("
+    "title, content=catalog_jobs, content_rowid=rowid)",
+    "CREATE TRIGGER IF NOT EXISTS catalog_jobs_fts_ai AFTER INSERT ON catalog_jobs BEGIN "
+    "INSERT INTO catalog_jobs_fts(rowid, title) VALUES (new.rowid, new.title); END",
+    "CREATE TRIGGER IF NOT EXISTS catalog_jobs_fts_ad AFTER DELETE ON catalog_jobs BEGIN "
+    "INSERT INTO catalog_jobs_fts(catalog_jobs_fts, rowid, title) "
+    "VALUES ('delete', old.rowid, old.title); END",
+    "CREATE TRIGGER IF NOT EXISTS catalog_jobs_fts_au AFTER UPDATE OF title ON catalog_jobs BEGIN "
+    "INSERT INTO catalog_jobs_fts(catalog_jobs_fts, rowid, title) "
+    "VALUES ('delete', old.rowid, old.title); "
+    "INSERT INTO catalog_jobs_fts(rowid, title) VALUES (new.rowid, new.title); END",
+]
+
+
 async def run_migrations() -> None:
     await _add_column_if_missing("analysis_score", "REAL")
     await _add_column_if_missing("parsed_jd", "TEXT")
@@ -96,3 +111,11 @@ async def run_migrations() -> None:
         "run_id TEXT NOT NULL, "
         "PRIMARY KEY (job_key, pipeline))"
     )
+    for statement in _FTS_STATEMENTS:
+        await execute(statement)
+    # The catalog may predate the FTS index (or have been built by an older
+    # viewer that never populated it), so rebuild once when the index is empty.
+    indexed = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs_fts_docsize")
+    rows = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs")
+    if indexed and rows and indexed["n"] == 0 and rows["n"] > 0:
+        await execute("INSERT INTO catalog_jobs_fts(catalog_jobs_fts) VALUES('rebuild')")

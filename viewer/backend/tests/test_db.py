@@ -43,7 +43,52 @@ async def test_run_migrations_adds_columns_and_tables(isolated_env):
     tables = await fetchall("SELECT name FROM sqlite_master WHERE type = 'table'")
     names = {t["name"] for t in tables}
     assert "job_analyses" in names
-    assert "catalog_jobs_fts" not in names  # title search uses LIKE; no FTS index is built
+    assert "catalog_jobs_fts" in names  # title search uses the FTS5 index
+    triggers = await fetchall("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+    trigger_names = {t["name"] for t in triggers}
+    assert {"catalog_jobs_fts_ai", "catalog_jobs_fts_ad", "catalog_jobs_fts_au"} <= trigger_names
+
+
+async def test_run_migrations_rebuilds_fts_from_existing_rows(isolated_env):
+    insert_job(isolated_env["catalog_db"], job_id="1", title="Backend Engineer")
+    await run_migrations()
+
+    rows = await fetchall(
+        "SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?", ('"engineer"*',)
+    )
+    assert len(rows) == 1
+
+
+async def test_fts_triggers_keep_index_current(migrated_env):
+    await execute(
+        "INSERT INTO catalog_jobs (provider, source_key, job_id, title) VALUES (?, ?, ?, ?)",
+        ("gh", "acme", "1", "Backend Engineer"),
+    )
+    rows = await fetchall(
+        "SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?", ('"engineer"*',)
+    )
+    assert len(rows) == 1
+
+    await execute("UPDATE catalog_jobs SET title = 'Data Scientist' WHERE job_id = '1'")
+    assert (
+        await fetchall("SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?", ('"engineer"*',))
+        == []
+    )
+    assert (
+        len(
+            await fetchall(
+                "SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?",
+                ('"scientist"*',),
+            )
+        )
+        == 1
+    )
+
+    await execute("DELETE FROM catalog_jobs WHERE job_id = '1'")
+    assert (
+        await fetchall("SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?", ('"scientist"*',))
+        == []
+    )
 
 
 async def test_run_migrations_is_idempotent(isolated_env):

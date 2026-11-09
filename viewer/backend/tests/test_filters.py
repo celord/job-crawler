@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from services.filters import add_job_filter_conditions, parse_title_query
+from services.filters import add_job_filter_conditions, parse_title_query, title_fts_query
 
 
 def test_parse_title_query_simple_tokens():
@@ -40,23 +40,40 @@ def test_add_job_filter_conditions_empty_returns_no_where():
     assert params == []
 
 
-def test_add_job_filter_conditions_title_never_uses_fts():
+def test_add_job_filter_conditions_title_uses_fts():
     for query in ["backend", "-intern (pm,tpm)", "-(intern,contract)"]:
         where, _ = add_job_filter_conditions(title=query)
-        assert "catalog_jobs_fts" not in where
+        assert "catalog_jobs_fts MATCH" in where
 
 
-def test_add_job_filter_conditions_negated_group_is_and_not_like():
+def test_add_job_filter_conditions_negated_group_excludes_any_term():
     where, params = add_job_filter_conditions(title="-(intern,contract)")
-    assert "AND" in where
-    assert params == ["% intern%", "% contract%"]
+    assert where.count("NOT IN") == 1
+    assert params == ['"intern"* OR "contract"*']
+
+
+def test_title_fts_query_combines_tokens():
+    assert title_fts_query("engineer") == '"engineer"*'
+    assert title_fts_query("backend engineer") == '"backend"* AND "engineer"*'
+    assert title_fts_query("(react,vue)") == '("react"* OR "vue"*)'
+    assert title_fts_query("engineer -principal") == '("engineer"*) NOT ("principal"*)'
+    assert title_fts_query("-(intern,contract)") is None
 
 
 def _titles_matching(query: str, titles: list[str]) -> list[str]:
     where, params = add_job_filter_conditions(title=query)
     db = sqlite3.connect(":memory:")
     db.execute("CREATE TABLE catalog_jobs (title TEXT)")
-    db.executemany("INSERT INTO catalog_jobs (title) VALUES (?)", [(t,) for t in titles])
+    db.execute(
+        "CREATE VIRTUAL TABLE catalog_jobs_fts USING fts5("
+        "title, content=catalog_jobs, content_rowid=rowid)"
+    )
+    for title in titles:
+        cur = db.execute("INSERT INTO catalog_jobs (title) VALUES (?)", (title,))
+        db.execute(
+            "INSERT INTO catalog_jobs_fts(rowid, title) VALUES (?, ?)",
+            (cur.lastrowid, title),
+        )
     return [row[0] for row in db.execute(f"SELECT title FROM catalog_jobs {where}", params)]
 
 

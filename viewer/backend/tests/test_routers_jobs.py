@@ -52,6 +52,22 @@ def test_list_jobs_company_filter(app_client, migrated_env):
     assert body["jobs"][0]["source_key"] == "acme"
 
 
+def test_list_jobs_title_search_uses_word_prefix(app_client, migrated_env):
+    insert_job(migrated_env["catalog_db"], job_id="1", title="Engineering Manager")
+    insert_job(migrated_env["catalog_db"], job_id="2", title="Software Engineer")
+    insert_job(migrated_env["catalog_db"], job_id="3", title="Data Scientist")
+    insert_job(migrated_env["catalog_db"], job_id="4", title="Senior Principal Engineer")
+
+    r = app_client.get("/api/jobs?title=engineer")
+    assert r.status_code == 200
+    assert sorted(job["job_id"] for job in r.json()["jobs"]) == ["1", "2", "4"]
+    assert r.json()["total"] == 3
+
+    r = app_client.get("/api/jobs?title=engineer%20-principal")
+    assert [job["job_id"] for job in r.json()["jobs"]] == ["1", "2"]
+    assert r.json()["total"] == 2
+
+
 def test_get_job_requires_full_key(app_client):
     r = app_client.get("/api/job")
     assert r.status_code == 400

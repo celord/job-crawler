@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import { useUiStore } from "../stores/uiStore";
@@ -23,10 +23,12 @@ function parseJobKey(key: string): { provider: string; source_key: string; job_i
 export function useJobs(filters: JobsFilters) {
   return useQuery({
     queryKey: ["jobs", filters],
-    queryFn: async () => {
-      const { data } = await api.get<JobsResponse>("/jobs", { params: filters });
+    queryFn: async ({ signal }) => {
+      const { data } = await api.get<JobsResponse>("/jobs", { params: filters, signal });
       return data;
     },
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
   });
 }
 

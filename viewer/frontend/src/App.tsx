@@ -44,6 +44,7 @@ function App() {
 
   const jobs = searchesActive ? mergedSearchJobs.jobs : (normalJobsQuery.data?.jobs ?? []);
   const isLoading = searchesActive ? mergedSearchJobs.isLoading : normalJobsQuery.isLoading;
+  const isFetching = searchesActive ? mergedSearchJobs.isFetching : normalJobsQuery.isFetching;
   const isError = searchesActive ? false : normalJobsQuery.isError;
   const total = searchesActive ? mergedSearchJobs.total : (normalJobsQuery.data?.total ?? 0);
 
@@ -52,7 +53,13 @@ function App() {
       <Header />
       <SavedSearchStrip activeSearchIds={activeSearchIds} onToggle={toggleSearch} />
       <FilterBar disabled={searchesActive} />
-      <JobList jobs={jobs} isLoading={isLoading} isError={isError} />
+      <JobList
+        jobs={jobs}
+        isLoading={isLoading}
+        isFetching={isFetching}
+        isError={isError}
+        total={total}
+      />
       {!searchesActive && (
         <Pagination
           page={filters.page}
