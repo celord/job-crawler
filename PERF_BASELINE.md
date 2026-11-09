@@ -30,8 +30,10 @@ loaded; steady state is shown above.
 ## Notes
 
 - The catalog already had a `catalog_jobs_fts` table, but its index was empty
-  (`catalog_jobs_fts_docsize` = 0). The migration rebuilds it once when the
-  index is empty, which is why the first post-deploy search is slower.
+  (`catalog_jobs_fts_docsize` = 0). The migration now rebuilds it whenever the
+  index row count differs from `catalog_jobs`, in rowid chunks so no single
+  write lock covers the whole build. The rebuild still runs once at startup and
+  delays readiness; it is not triggered by the first search.
 - Text-only searches now count matches in FTS directly. A `COUNT(*)` over the
   content table by rowid cost ~0.5 s for ~73k matches; the FTS count avoids
   those random row lookups. Text plus other filters keeps the normal SQL count.

@@ -125,6 +125,12 @@ def test_title_query_uses_one_word_prefix_rule(query, expected):
     assert _titles_matching(query, _CATALOG_TITLES) == [t for t in _CATALOG_TITLES if t in expected]
 
 
+@pytest.mark.parametrize(("term", "match"), [("c#", "C# Developer"), ("c++", "C++ Developer")])
+def test_title_query_punctuation_matches_the_literal_token(term, match):
+    titles = ["Customer Success Manager", "Cloud Engineer", match]
+    assert _titles_matching(term, titles) == [match]
+
+
 def _locations_matching(my_location: str, locations: list[str], include_remote: bool = False) -> list[str]:
     where, params = add_job_filter_conditions(my_location=my_location, include_remote=include_remote)
     conn = sqlite3.connect(":memory:")

@@ -39,9 +39,11 @@ export function JobList({ jobs, isLoading, isFetching, isError, total }: Props) 
       <div className="results-progress">
         {showProgress &&
           (reducedMotion ? (
-            <span className="search-progress-label">Searching…</span>
+            <span className="search-progress-label" aria-hidden="true">
+              Searching…
+            </span>
           ) : (
-            <div className="search-progress" role="progressbar" aria-label="Searching jobs" />
+            <div className="search-progress" data-testid="search-progress" aria-hidden="true" />
           ))}
       </div>
       <p className="results-status" role="status" aria-live="polite">

@@ -68,25 +68,39 @@ def _word_boundary_text(column: str, separators: tuple[str, ...]) -> str:
 
 def _fts_phrase(term: str) -> str:
     # FTS5 double-quoted strings escape an embedded quote by doubling it.
-    return f'"{term.replace(chr(34), chr(34) * 2)}"*'
+    phrase = f'"{term.replace(chr(34), chr(34) * 2)}"'
+    # unicode61 strips punctuation, so a prefix match on "c#" would collapse
+    # to "c*" and match nearly every title. Only purely alphanumeric terms get
+    # the prefix operator; punctuation terms stay an exact tokenized phrase,
+    # preserving the old LIKE's literal behavior.
+    return f"{phrase}*" if term.isalnum() else phrase
 
 
-def title_fts_query(raw: str | None) -> str | None:
-    """One FTS5 MATCH expression for all title tokens, or None for
-    pure-negation queries (FTS5 has no unary NOT to anchor them)."""
-    tokens = parse_title_query(raw or "")
-    positive: list[str] = []
-    negative: list[str] = []
-    for token in tokens:
-        phrases = [_fts_phrase(term.lower()) for term in token["terms"]]
-        group = phrases[0] if len(phrases) == 1 else "(" + " OR ".join(phrases) + ")"
-        (negative if token["exclude"] else positive).append(group)
+def _title_groups(raw: str | None) -> list[tuple[list[str], bool]]:
+    return [
+        ([_fts_phrase(term.lower()) for term in token["terms"]], token["exclude"])
+        for token in parse_title_query(raw or "")
+    ]
+
+
+def _title_match_query(groups: list[tuple[list[str], bool]]) -> str | None:
+    def join(phrases: list[str]) -> str:
+        return phrases[0] if len(phrases) == 1 else "(" + " OR ".join(phrases) + ")"
+
+    positive = [join(phrases) for phrases, exclude in groups if not exclude]
+    negative = [join(phrases) for phrases, exclude in groups if exclude]
     if not positive:
         return None
     query = " AND ".join(positive)
     if negative:
         query = f"({query}) NOT ({' OR '.join(negative)})"
     return query
+
+
+def title_fts_query(raw: str | None) -> str | None:
+    """One FTS5 MATCH expression for all title tokens, or None for
+    pure-negation queries (FTS5 has no unary NOT to anchor them)."""
+    return _title_match_query(_title_groups(raw))
 
 
 def _title_fts_condition(negated: bool) -> str:
@@ -104,7 +118,7 @@ def _location_word_pattern(term: str) -> str:
     return f"% {_escape_like(term.strip().lower())} %"
 
 
-def add_job_filter_conditions(
+def build_job_filter(
     title: str | None = None,
     my_location: str | None = None,
     include_remote: bool = True,
@@ -118,7 +132,10 @@ def add_job_filter_conditions(
     types: str | None = None,
     evaluated: bool = False,
     score: str | None = None,
-) -> tuple[str, list]:
+) -> tuple[str, list, str | None, bool]:
+    """Build the job filter once, including the title FTS expression and
+    whether title filtering is the only condition (used for the fast FTS
+    count path)."""
     conditions: list[str] = []
     params: list = []
 
@@ -130,11 +147,10 @@ def add_job_filter_conditions(
         ",".join(sources) if isinstance(sources, list) else str(sources) if sources is not None else ""
     )
 
-    if title.strip():
-        for token in parse_title_query(title):
-            terms = token["terms"]
-            conditions.append(_title_fts_condition(negated=token["exclude"]))
-            params.append(" OR ".join(_fts_phrase(term.lower()) for term in terms))
+    title_groups = _title_groups(title)
+    for phrases, negated in title_groups:
+        conditions.append(_title_fts_condition(negated=negated))
+        params.append(" OR ".join(phrases))
 
     # Location: match jobs near my_location OR remote jobs (if include_remote).
     # Empty my_location + include_remote -> remote only.
@@ -211,4 +227,38 @@ def add_job_filter_conditions(
         conditions.append("analysis_score >= 4")
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    return where_clause, params
+    title_only = bool(title_groups) and len(conditions) == len(title_groups)
+    return where_clause, params, _title_match_query(title_groups), title_only
+
+
+def add_job_filter_conditions(
+    title: str | None = None,
+    my_location: str | None = None,
+    include_remote: bool = True,
+    company: str | None = None,
+    sources: str | list[str] | None = None,
+    days: str | int | None = None,
+    fav_companies: list[str] | None = None,
+    include: str | None = None,
+    exclude: str | None = None,
+    tiers: str | None = None,
+    types: str | None = None,
+    evaluated: bool = False,
+    score: str | None = None,
+) -> tuple[str, list]:
+    where, params, _fts_query, _title_only = build_job_filter(
+        title=title,
+        my_location=my_location,
+        include_remote=include_remote,
+        company=company,
+        sources=sources,
+        days=days,
+        fav_companies=fav_companies,
+        include=include,
+        exclude=exclude,
+        tiers=tiers,
+        types=types,
+        evaluated=evaluated,
+        score=score,
+    )
+    return where, params

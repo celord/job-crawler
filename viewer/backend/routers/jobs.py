@@ -9,7 +9,7 @@ import config
 from db import fetchall, fetchone
 from services.analysis import best_analysis, get_analysis_cache
 from services.company import sanitize_job
-from services.filters import ORDER_BY_CLAUSE, add_job_filter_conditions, title_fts_query
+from services.filters import ORDER_BY_CLAUSE, build_job_filter
 
 router = APIRouter(prefix="/api")
 
@@ -68,7 +68,7 @@ async def list_jobs(
     fav_list = [c.strip() for c in favCompanies.split(",") if c.strip()] if favCompanies else None
     evaluated_flag = evaluated == "1"
 
-    where, params = add_job_filter_conditions(
+    where, params, fts_query, title_only = build_job_filter(
         title=title,
         my_location=myLoc,
         include_remote=include_remote,
@@ -84,25 +84,7 @@ async def list_jobs(
         score=score,
     )
 
-    fts_query = title_fts_query(title)
-    other_where = ""
-    if fts_query is not None:
-        other_where, _ = add_job_filter_conditions(
-            my_location=myLoc,
-            include_remote=include_remote,
-            company=company,
-            sources=sources,
-            days=days,
-            fav_companies=fav_list,
-            include=inc,
-            exclude=exc,
-            tiers=tiers,
-            types=types,
-            evaluated=evaluated_flag,
-            score=score,
-        )
-
-    if fts_query is not None and other_where == "":
+    if title_only and fts_query is not None:
         # Counting FTS matches directly avoids 70k+ random row lookups that
         # a filtered COUNT over the content table would need for text-only
         # searches.

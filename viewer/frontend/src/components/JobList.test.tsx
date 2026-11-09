@@ -66,18 +66,20 @@ describe("JobList", () => {
   it("shows a delayed progress bar while keeping the old list visible", () => {
     const { rerender } = renderList(<JobList {...baseProps} isFetching />);
 
-    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByTestId("search-progress")).toBeNull();
     act(() => vi.advanceTimersByTime(149));
-    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByTestId("search-progress")).toBeNull();
 
     act(() => vi.advanceTimersByTime(1));
-    expect(screen.getByRole("progressbar")).toBeTruthy();
+    const progress = screen.getByTestId("search-progress");
+    expect(progress.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.queryByRole("progressbar")).toBeNull();
     expect(screen.getByText("Job 1")).toBeTruthy();
     expect(screen.getByTestId("results").getAttribute("aria-busy")).toBe("true");
-    expect(screen.getAllByText("Searching…").length).toBeGreaterThan(0);
+    expect(screen.getByRole("status").textContent).toBe("Searching…");
 
     rerender(<JobList {...baseProps} isFetching={false} />);
-    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByTestId("search-progress")).toBeNull();
     expect(screen.getByTestId("results").getAttribute("aria-busy")).toBe("false");
     expect(screen.getByText("2 jobs found")).toBeTruthy();
   });
@@ -92,7 +94,7 @@ describe("JobList", () => {
     expect(screen.queryByText("Searching…")).toBeNull();
   });
 
-  it("uses a static label instead of animation when reduced motion is requested", () => {
+  it("announces searching once when reduced motion replaces the bar with a label", () => {
     vi.stubGlobal(
       "matchMedia",
       vi.fn(() => ({
@@ -102,10 +104,16 @@ describe("JobList", () => {
       })),
     );
 
-    renderList(<JobList {...baseProps} isFetching />);
+    const { container } = renderList(<JobList {...baseProps} isFetching />);
     act(() => vi.advanceTimersByTime(150));
 
-    expect(screen.queryByRole("progressbar")).toBeNull();
-    expect(screen.getAllByText("Searching…").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("search-progress")).toBeNull();
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0].textContent).toBe("Searching…");
+
+    const label = container.querySelector(".search-progress-label");
+    expect(label?.textContent).toBe("Searching…");
+    expect(label?.getAttribute("aria-hidden")).toBe("true");
   });
 });

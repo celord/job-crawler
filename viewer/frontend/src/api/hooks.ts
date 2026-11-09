@@ -89,6 +89,7 @@ export function useStartMatchRun() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 }
@@ -111,6 +112,7 @@ export function useStartMatchRunWithJD() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 }

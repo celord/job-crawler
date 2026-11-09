@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "./client";
-import { useJobs } from "./hooks";
+import { useJobs, useStartMatchRun, useStartMatchRunWithJD } from "./hooks";
 import type { JobsFilters, JobsResponse } from "../types";
 
 vi.mock("./client", () => ({
-  api: { get: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn() },
 }));
 
 function response(title: string): JobsResponse {
@@ -23,6 +23,46 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 const get = vi.mocked(api.get);
+const post = vi.mocked(api.post);
+
+describe("analysis mutations", () => {
+  beforeEach(() => {
+    post.mockReset();
+  });
+
+  it("invalidates cached job results when a run starts", async () => {
+    post.mockResolvedValue({ data: { run_id: "run-1", manifest: {} } });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    const Wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(
+      () => ({ start: useStartMatchRun(), startWithJD: useStartMatchRunWithJD() }),
+      { wrapper: Wrapper },
+    );
+
+    client.setQueryData(["jobs", { title: "full" }], response("stale"));
+    await act(async () => {
+      await result.current.start.mutateAsync({ job_keys: ["gh|acme|1"], mode: "full" });
+    });
+    expect(client.getQueryState(["jobs", { title: "full" }])?.isInvalidated).toBe(true);
+
+    client.setQueryData(["jobs", { title: "paste" }], response("stale"));
+    await act(async () => {
+      await result.current.startWithJD.mutateAsync({
+        provider: "gh",
+        source_key: "acme",
+        job_id: "1",
+        jd_text: "JD",
+        mode: "full",
+      });
+    });
+    expect(client.getQueryState(["jobs", { title: "paste" }])?.isInvalidated).toBe(true);
+  });
+});
 
 describe("useJobs", () => {
   beforeEach(() => {

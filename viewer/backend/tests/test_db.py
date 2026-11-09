@@ -59,6 +59,39 @@ async def test_run_migrations_rebuilds_fts_from_existing_rows(isolated_env):
     assert len(rows) == 1
 
 
+async def test_run_migrations_rebuilds_partially_populated_fts_index(isolated_env):
+    for i in range(3):
+        insert_job(isolated_env["catalog_db"], job_id=str(i), title=f"Engineer {i}")
+    await run_migrations()
+
+    missing = await fetchone("SELECT rowid AS row_id, title FROM catalog_jobs WHERE job_id = '1'")
+    await execute(
+        "INSERT INTO catalog_jobs_fts(catalog_jobs_fts, rowid, title) VALUES ('delete', ?, ?)",
+        (missing["row_id"], missing["title"]),
+    )
+    indexed = await fetchone("SELECT COUNT(*) AS n FROM catalog_jobs_fts_docsize")
+    assert indexed["n"] == 2
+
+    await run_migrations()
+
+    rows = await fetchall(
+        "SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?", ('"engineer"*',)
+    )
+    assert len(rows) == 3
+
+
+async def test_fts_update_trigger_skips_unchanged_title_upserts(migrated_env):
+    insert_job(migrated_env["catalog_db"], job_id="1", title="Backend Engineer")
+    before = await fetchall("SELECT id, block FROM catalog_jobs_fts_data ORDER BY id")
+
+    await execute(
+        "UPDATE catalog_jobs SET title = 'Backend Engineer', location = 'Elsewhere' WHERE job_id = '1'"
+    )
+
+    after = await fetchall("SELECT id, block FROM catalog_jobs_fts_data ORDER BY id")
+    assert after == before
+
+
 async def test_fts_triggers_keep_index_current(migrated_env):
     await execute(
         "INSERT INTO catalog_jobs (provider, source_key, job_id, title) VALUES (?, ?, ?, ?)",
