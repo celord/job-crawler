@@ -57,6 +57,7 @@ def _company_slug_patterns(term: str) -> list[str]:
 
 
 _LOCATION_SEPARATORS = (",", "-", "/", "(", ")", ".")
+_TITLE_SEPARATORS = (",", "-", "/", "(", ")", ".", "_", "&", "+", ":", ";", "|")
 
 
 def _word_boundary_text(column: str, separators: tuple[str, ...]) -> str:
@@ -68,33 +69,69 @@ def _word_boundary_text(column: str, separators: tuple[str, ...]) -> str:
 
 def _fts_phrase(term: str) -> str:
     # FTS5 double-quoted strings escape an embedded quote by doubling it.
-    phrase = f'"{term.replace(chr(34), chr(34) * 2)}"'
-    # unicode61 strips punctuation, so a prefix match on "c#" would collapse
-    # to "c*" and match nearly every title. Only purely alphanumeric terms get
-    # the prefix operator; punctuation terms stay an exact tokenized phrase,
-    # preserving the old LIKE's literal behavior.
-    return f"{phrase}*" if term.isalnum() else phrase
+    # Only alphanumeric terms reach this helper: unicode61 strips punctuation,
+    # so "c#" would collapse to the token "c" and match unrelated titles.
+    return f'"{term.replace(chr(34), chr(34) * 2)}"*'
 
 
-def _title_groups(raw: str | None) -> list[tuple[list[str], bool]]:
-    return [
-        ([_fts_phrase(term.lower()) for term in token["terms"]], token["exclude"])
-        for token in parse_title_query(raw or "")
-    ]
+def _title_groups(raw: str | None) -> list[dict]:
+    groups: list[dict] = []
+    for token in parse_title_query(raw or ""):
+        terms = [term.lower() for term in token["terms"]]
+        groups.append(
+            {
+                "fts": [_fts_phrase(term) for term in terms if term.isalnum()],
+                "literal": [term for term in terms if not term.isalnum()],
+                "exclude": token["exclude"],
+            }
+        )
+    return groups
 
 
-def _title_match_query(groups: list[tuple[list[str], bool]]) -> str | None:
+def _title_match_query(groups: list[dict]) -> str | None:
     def join(phrases: list[str]) -> str:
         return phrases[0] if len(phrases) == 1 else "(" + " OR ".join(phrases) + ")"
 
-    positive = [join(phrases) for phrases, exclude in groups if not exclude]
-    negative = [join(phrases) for phrases, exclude in groups if exclude]
+    # LIKE terms cannot be represented in the FTS expression; callers must
+    # fall back to the filtered row count for those queries.
+    if not groups or any(group["literal"] for group in groups):
+        return None
+
+    positive = [join(group["fts"]) for group in groups if not group["exclude"]]
+    negative = [join(group["fts"]) for group in groups if group["exclude"]]
     if not positive:
         return None
     query = " AND ".join(positive)
     if negative:
         query = f"({query}) NOT ({' OR '.join(negative)})"
     return query
+
+
+def _title_word_condition(negated: bool, term: str) -> str:
+    # Keep the term's own punctuation intact while still treating the other
+    # separators around it as word boundaries.
+    separators = tuple(sep for sep in _TITLE_SEPARATORS if sep not in term)
+    operator = "NOT LIKE" if negated else "LIKE"
+    return f"{_word_boundary_text('title', separators)} {operator} ? ESCAPE '\\'"
+
+
+def _title_word_pattern(term: str) -> str:
+    return f"% {_escape_like(term.lower())}%"
+
+
+def _title_condition(group: dict) -> tuple[str, list[str]]:
+    parts: list[str] = []
+    params: list[str] = []
+    if group["fts"]:
+        parts.append(_title_fts_condition(negated=group["exclude"]))
+        params.append(" OR ".join(group["fts"]))
+    for term in group["literal"]:
+        parts.append(_title_word_condition(negated=group["exclude"], term=term))
+        params.append(_title_word_pattern(term))
+    if len(parts) == 1:
+        return parts[0], params
+    joiner = " AND " if group["exclude"] else " OR "
+    return "(" + joiner.join(parts) + ")", params
 
 
 def title_fts_query(raw: str | None) -> str | None:
@@ -148,9 +185,10 @@ def build_job_filter(
     )
 
     title_groups = _title_groups(title)
-    for phrases, negated in title_groups:
-        conditions.append(_title_fts_condition(negated=negated))
-        params.append(" OR ".join(phrases))
+    for group in title_groups:
+        condition, group_params = _title_condition(group)
+        conditions.append(condition)
+        params.extend(group_params)
 
     # Location: match jobs near my_location OR remote jobs (if include_remote).
     # Empty my_location + include_remote -> remote only.
@@ -227,7 +265,11 @@ def build_job_filter(
         conditions.append("analysis_score >= 4")
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    title_only = bool(title_groups) and len(conditions) == len(title_groups)
+    title_only = (
+        bool(title_groups)
+        and all(not group["literal"] for group in title_groups)
+        and len(conditions) == len(title_groups)
+    )
     return where_clause, params, _title_match_query(title_groups), title_only
 
 

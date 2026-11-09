@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "./client";
 import { useJobs, useStartMatchRun, useStartMatchRunWithJD } from "./hooks";
-import type { JobsFilters, JobsResponse } from "../types";
+import { useMergedSearchJobs } from "../hooks/useSavedSearches";
+import type { JobsFilters, JobsResponse, SavedSearch } from "../types";
 
 vi.mock("./client", () => ({
   api: { get: vi.fn(), post: vi.fn() },
@@ -61,6 +62,37 @@ describe("analysis mutations", () => {
       });
     });
     expect(client.getQueryState(["jobs", { title: "paste" }])?.isInvalidated).toBe(true);
+  });
+
+  it("refetches saved-search job lists when an analysis run starts", async () => {
+    get.mockReset();
+    get.mockResolvedValue({ data: response("saved") });
+    post.mockResolvedValue({ data: { run_id: "run-1", manifest: {} } });
+    const search: SavedSearch = { id: "saved-1", label: "Saved", title: "engineer" };
+
+    const { result } = renderHook(
+      () => ({ saved: useMergedSearchJobs([search]), start: useStartMatchRun(), startWithJD: useStartMatchRunWithJD() }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.saved.isLoading).toBe(false));
+    expect(get).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.start.mutateAsync({ job_keys: ["gh|acme|1"], mode: "full" });
+    });
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      await result.current.startWithJD.mutateAsync({
+        provider: "gh",
+        source_key: "acme",
+        job_id: "1",
+        jd_text: "JD",
+        mode: "full",
+      });
+    });
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
   });
 });
 

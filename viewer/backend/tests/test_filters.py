@@ -3,7 +3,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from services.filters import add_job_filter_conditions, parse_title_query, title_fts_query
+from services.filters import (
+    add_job_filter_conditions,
+    build_job_filter,
+    parse_title_query,
+    title_fts_query,
+)
 
 
 def test_parse_title_query_simple_tokens():
@@ -92,6 +97,9 @@ _CATALOG_TITLES = [
     "Intern Engineer",
     "Contract Engineer",
     "Engineer, Platform",
+    "C# Developer",
+    "C++ Developer",
+    "C Developer",
 ]
 
 
@@ -125,10 +133,17 @@ def test_title_query_uses_one_word_prefix_rule(query, expected):
     assert _titles_matching(query, _CATALOG_TITLES) == [t for t in _CATALOG_TITLES if t in expected]
 
 
-@pytest.mark.parametrize(("term", "match"), [("c#", "C# Developer"), ("c++", "C++ Developer")])
-def test_title_query_punctuation_matches_the_literal_token(term, match):
-    titles = ["Customer Success Manager", "Cloud Engineer", match]
-    assert _titles_matching(term, titles) == [match]
+@pytest.mark.parametrize(("query", "match"), [("c#", "C# Developer"), ("c++", "C++ Developer")])
+def test_title_query_punctuation_matches_the_literal_token(query, match):
+    titles = ["Customer Success Manager", "Cloud Engineer", "C# Developer", "C++ Developer", "C Developer"]
+    assert _titles_matching(query, titles) == [match]
+
+
+@pytest.mark.parametrize(("query", "match"), [("c#", "C# Developer"), ("c++", "C++ Developer")])
+def test_title_query_punctuation_terms_skip_the_fts_fast_count(query, match):
+    _where, _params, _fts_query, title_only = build_job_filter(title=query)
+    assert title_only is False
+    assert _titles_matching(query, _CATALOG_TITLES) == [match]
 
 
 def _locations_matching(my_location: str, locations: list[str], include_remote: bool = False) -> list[str]:

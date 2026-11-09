@@ -59,7 +59,7 @@ describe("JobList", () => {
     renderList(<JobList {...baseProps} jobs={[]} isLoading isFetching total={0} />);
 
     expect(screen.getAllByTestId("job-skeleton")).toHaveLength(4);
-    expect(screen.getByTestId("results").getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByTestId("results-list").getAttribute("aria-busy")).toBe("true");
     expect(screen.queryByText("No jobs match the current filters.")).toBeNull();
   });
 
@@ -75,13 +75,21 @@ describe("JobList", () => {
     expect(progress.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("progressbar")).toBeNull();
     expect(screen.getByText("Job 1")).toBeTruthy();
-    expect(screen.getByTestId("results").getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByTestId("results-list").getAttribute("aria-busy")).toBe("true");
     expect(screen.getByRole("status").textContent).toBe("Searching…");
 
     rerender(<JobList {...baseProps} isFetching={false} />);
     expect(screen.queryByTestId("search-progress")).toBeNull();
-    expect(screen.getByTestId("results").getAttribute("aria-busy")).toBe("false");
+    expect(screen.getByTestId("results-list").getAttribute("aria-busy")).toBe("false");
     expect(screen.getByText("2 jobs found")).toBeTruthy();
+  });
+
+  it("keeps the live status line outside any aria-busy subtree", () => {
+    renderList(<JobList {...baseProps} isFetching />);
+
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("Searching…");
+    expect(status.closest('[aria-busy="true"]')).toBeNull();
   });
 
   it("does not flash the progress bar for fast responses", () => {

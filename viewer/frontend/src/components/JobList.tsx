@@ -35,7 +35,7 @@ export function JobList({ jobs, isLoading, isFetching, isError, total }: Props) 
   const showError = isError && !isFetching;
 
   return (
-    <section className="results" data-testid="results" aria-busy={isFetching}>
+    <section className="results" data-testid="results">
       <div className="results-progress">
         {showProgress &&
           (reducedMotion ? (
@@ -50,19 +50,21 @@ export function JobList({ jobs, isLoading, isFetching, isError, total }: Props) 
         {isFetching ? "Searching…" : showError ? "Failed to load jobs." : `${total} jobs found`}
       </p>
 
-      {showError ? (
-        <p>Failed to load jobs.</p>
-      ) : showSkeleton ? (
-        <SkeletonList />
-      ) : jobs.length === 0 ? (
-        <p>No jobs match the current filters.</p>
-      ) : (
-        <div className="job-list">
-          {jobs.map((job) => (
-            <JobCard key={`${job.provider}|${job.source_key}|${job.job_id}`} job={job} />
-          ))}
-        </div>
-      )}
+      <div className="results-list" data-testid="results-list" aria-busy={isFetching}>
+        {showError ? (
+          <p>Failed to load jobs.</p>
+        ) : showSkeleton ? (
+          <SkeletonList />
+        ) : jobs.length === 0 ? (
+          <p>No jobs match the current filters.</p>
+        ) : (
+          <div className="job-list">
+            {jobs.map((job) => (
+              <JobCard key={`${job.provider}|${job.source_key}|${job.job_id}`} job={job} />
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

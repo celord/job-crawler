@@ -68,6 +68,17 @@ def test_list_jobs_title_search_uses_word_prefix(app_client, migrated_env):
     assert r.json()["total"] == 2
 
 
+def test_list_jobs_punctuation_title_total_matches_rows(app_client, migrated_env):
+    insert_job(migrated_env["catalog_db"], job_id="1", title="C# Developer")
+    insert_job(migrated_env["catalog_db"], job_id="2", title="C++ Developer")
+    insert_job(migrated_env["catalog_db"], job_id="3", title="C Developer")
+
+    r = app_client.get("/api/jobs", params={"title": "c#"})
+    body = r.json()
+    assert [job["title"] for job in body["jobs"]] == ["C# Developer"]
+    assert body["total"] == 1
+
+
 def test_get_job_requires_full_key(app_client):
     r = app_client.get("/api/job")
     assert r.status_code == 400
