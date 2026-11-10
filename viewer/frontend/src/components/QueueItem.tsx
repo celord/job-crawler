@@ -32,6 +32,8 @@ export function QueueItem({ item }: Props) {
   const setActivePanelJobKey = useUiStore((s) => s.setActivePanelJobKey);
 
   const [now, setNow] = useState(Date.now());
+  const [showError, setShowError] = useState(false);
+  const [copied, setCopied] = useState(false);
   const isRunning = item.status === "running" || item.status === "todo";
 
   useEffect(() => {
@@ -43,6 +45,27 @@ export function QueueItem({ item }: Props) {
   const runningSubtask = item.subtasks.find((s) => s.status === "running" && s.started_at);
   const canRetry = item.status === "error" || item.status === "permanent_error";
   const canStop = item.status === "running" || item.status === "todo";
+  const firstErrorLine = item.error ? item.error.split("\n")[0] : null;
+
+  const copyErrorJson = async () => {
+    const payload = JSON.stringify(
+      {
+        job_key: item.job_key,
+        mode: item.mode,
+        status: item.status,
+        error: item.error,
+      },
+      null,
+      2,
+    );
+    try {
+      await navigator.clipboard.writeText(payload);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (permissions, non-secure context) — nothing to do.
+    }
+  };
 
   return (
     <div className="queue-item">
@@ -72,6 +95,27 @@ export function QueueItem({ item }: Props) {
         <p className="queue-item-elapsed mono">{formatElapsed(runningSubtask.started_at, now)}</p>
       )}
 
+      {item.error && (
+        <div className="queue-item-error">
+          <button
+            type="button"
+            className="queue-item-error-toggle"
+            aria-expanded={showError}
+            onClick={() => setShowError((v) => !v)}
+          >
+            {showError ? "Hide error" : "Show error"}
+          </button>
+          {showError && firstErrorLine && (
+            <div className="queue-item-error-detail">
+              <p className="queue-item-error-first-line mono">{firstErrorLine}</p>
+              <button type="button" onClick={() => void copyErrorJson()}>
+                {copied ? "Copied" : "Copy error JSON"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="queue-item-actions">
         {canRetry && (
           <button type="button" onClick={() => retry.mutate(item.id)}>
@@ -86,7 +130,12 @@ export function QueueItem({ item }: Props) {
         <button type="button" onClick={() => restart.mutate(item.id)}>
           Restart
         </button>
-        <button type="button" onClick={() => remove.mutate(item.id)}>
+        <button
+          type="button"
+          disabled={isRunning}
+          title={isRunning ? "Stop the item before dismissing it" : undefined}
+          onClick={() => remove.mutate(item.id)}
+        >
           Dismiss
         </button>
       </div>

@@ -5,6 +5,10 @@ CATALOG_DB = os.environ.get("CATALOG_DB", "/app/state/catalog.sqlite")
 STATE_DIR = os.environ.get("STATE_DIR", str(Path(CATALOG_DB).parent))
 MATCH_RUNS_DIR = os.environ.get("MATCH_RUNS_DIR", str(Path(STATE_DIR) / "match-runs"))
 ANALYSIS_CACHE_PATH = os.environ.get("ANALYSIS_CACHE_PATH", str(Path(STATE_DIR) / "job-analysis-cache.json"))
+# JSONL error log for failed analyses; lives under STATE_DIR so it survives
+# container restarts on the shared state volume. Capped at 5 MB (rotates to
+# errors.jsonl.1) — see services/error_log.py.
+ERROR_LOG_PATH = os.environ.get("ERROR_LOG_PATH", str(Path(STATE_DIR) / "errors.jsonl"))
 
 NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "meta/llama-4-maverick-17b-128e-instruct")
 NVIDIA_ENSEMBLE_SCORERS = os.environ.get("NVIDIA_ENSEMBLE_SCORERS")

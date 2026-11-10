@@ -200,6 +200,89 @@ async def test_score_job_ensemble_end_to_end(monkeypatch, tmp_path, profile_data
 
 
 @pytest.mark.asyncio
+async def test_score_job_ensemble_reports_skipped_scorers(monkeypatch, tmp_path, profile_data):
+    monkeypatch.setattr(
+        ensemble_scorer,
+        "settings",
+        dataclasses.replace(
+            settings,
+            state_dir=str(tmp_path),
+            nvidia_ensemble_scorers=[
+                "meta/llama-4-maverick-17b-128e-instruct",
+                "moonshotai/kimi-k2.6",
+            ],
+            nvidia_ensemble_synthesizer="nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        ),
+    )
+
+    llm_client.start_client()
+    try:
+
+        async def fake_chat_completions(*, model, **kwargs):
+            if "kimi" in model:
+                raise RuntimeError("kimi down")
+            import json as _json
+
+            return _json.dumps(
+                {
+                    "scorecard": {
+                        "core_skills": {"score": 4.0, "reason": "ok"},
+                        "relevant_experience": {"score": 4.0, "reason": "ok"},
+                        "target_alignment": {"score": 4.0, "reason": "ok"},
+                        "seniority_fit": {"score": 4.0, "reason": "ok"},
+                        "workplace_fit": {"score": 4.0, "reason": "ok"},
+                        "requirements_coverage": {"score": 4.0, "reason": "ok"},
+                    },
+                    "blockers": [],
+                    "verdict": "yes",
+                    "forces": [],
+                    "faiblesses": [],
+                    "remarques": "solid",
+                }
+            )
+
+        monkeypatch.setattr(llm_client, "chat_completions", fake_chat_completions)
+
+        job = {"job_id": "321", "title": "Senior TPM", "company": "Acme"}
+        analysis = await ensemble_scorer.score_job_ensemble(job, profile_data)
+        assert analysis["_scorer_skips"] == ["moonshotai/kimi-k2.6"]
+    finally:
+        await llm_client.stop_client()
+
+
+@pytest.mark.asyncio
+async def test_score_job_ensemble_wraps_synthesizer_failure(monkeypatch, tmp_path, profile_data):
+    monkeypatch.setattr(
+        ensemble_scorer,
+        "settings",
+        dataclasses.replace(
+            settings,
+            state_dir=str(tmp_path),
+            nvidia_ensemble_scorers=["meta/llama-4-maverick-17b-128e-instruct"],
+            nvidia_ensemble_synthesizer="nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        ),
+    )
+
+    llm_client.start_client()
+    try:
+
+        async def fake_chat_completions(*, model, **kwargs):
+            if "nemotron" in model:
+                return "not json at all"
+            import json as _json
+
+            return _json.dumps({"scorecard": {}, "blockers": [], "verdict": "yes"})
+
+        monkeypatch.setattr(llm_client, "chat_completions", fake_chat_completions)
+
+        job = {"job_id": "654", "title": "PM", "company": "Acme"}
+        with pytest.raises(RuntimeError, match="ensemble synthesizer failed"):
+            await ensemble_scorer.score_job_ensemble(job, profile_data)
+    finally:
+        await llm_client.stop_client()
+
+
+@pytest.mark.asyncio
 async def test_score_job_ensemble_raises_when_all_scorers_fail(monkeypatch, tmp_path, profile_data):
     monkeypatch.setattr(
         ensemble_scorer,

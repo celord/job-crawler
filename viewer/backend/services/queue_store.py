@@ -56,6 +56,22 @@ async def remove_queue_item(item_id: str) -> None:
         await _write_queue_unlocked(items)
 
 
+async def clear_queue(scope: str) -> int:
+    """Bulk clear, returns the number of removed items. scope "finished"
+    removes only done items; scope "all" removes everything except items
+    that are currently running."""
+    async with _LOCK:
+        items = await read_queue()
+        if scope == "finished":
+            kept = [i for i in items if i.get("status") != "done"]
+        else:
+            kept = [i for i in items if i.get("status") == "running"]
+        removed = len(items) - len(kept)
+        if removed:
+            await _write_queue_unlocked(kept)
+        return removed
+
+
 def run_id_from_item_id(item_id: str) -> str:
     idx = item_id.find(":")
     return item_id if idx == -1 else item_id[:idx]

@@ -130,6 +130,10 @@ export interface MatchRunResult {
   job_id: string;
   analysis?: Analysis;
   error?: string;
+  error_type?: string;
+  http_status?: number;
+  model?: string;
+  scorer_skips?: string[];
 }
 
 export interface Config {

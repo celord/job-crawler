@@ -97,6 +97,15 @@ def _job_row_base(job: dict) -> dict:
     }
 
 
+def _error_row_fields(exc: Exception, model: str) -> dict:
+    """Extra diagnostic fields for an error row (backward-compatible additions)."""
+    fields = {"error_type": type(exc).__name__, "model": model}
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        fields["http_status"] = status_code
+    return fields
+
+
 async def _run_quick(jobs: list[dict], run_id: str | None) -> list[dict]:
     profile_data = get_profile()
     results: list[dict] = []
@@ -116,6 +125,7 @@ async def _run_quick(jobs: list[dict], run_id: str | None) -> list[dict]:
         except Exception as exc:
             row["status"] = "error"
             row["error"] = str(exc)
+            row.update(_error_row_fields(exc, settings.nvidia_model))
             if run_id:
                 _mark_progress(run_id, ok=False)
         results.append(row)
@@ -148,12 +158,16 @@ async def _score_ensemble_row(job: dict, profile_data: dict, run_id: str | None)
     try:
         analysis = await score_job_ensemble(job, profile_data)
         row["status"] = "ok"
+        scorer_skips = analysis.pop("_scorer_skips", None)
         row["analysis"] = analysis
+        if scorer_skips:
+            row["scorer_skips"] = scorer_skips
         if run_id:
             _mark_progress(run_id, ok=True)
     except Exception as exc:
         row["status"] = "error"
         row["error"] = str(exc)
+        row.update(_error_row_fields(exc, settings.nvidia_ensemble_synthesizer))
         if run_id:
             _mark_progress(run_id, ok=False)
     return row

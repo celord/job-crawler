@@ -22,6 +22,15 @@ def _reset_queue_store_lock():
     queue_store._LOCK = asyncio.Lock()
 
 
+@pytest.fixture(autouse=True)
+def _reset_error_log_lock():
+    """Same cross-loop issue as _reset_queue_store_lock, for
+    services.error_log's module-level asyncio.Lock."""
+    from services import error_log
+
+    error_log._LOCK = asyncio.Lock()
+
+
 CATALOG_SCHEMA = """
 CREATE TABLE catalog_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,6 +64,7 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STATE_DIR", str(state_dir))
     monkeypatch.setattr(config, "MATCH_RUNS_DIR", str(state_dir / "match-runs"))
     monkeypatch.setattr(config, "ANALYSIS_CACHE_PATH", str(state_dir / "job-analysis-cache.json"))
+    monkeypatch.setattr(config, "ERROR_LOG_PATH", str(state_dir / "errors.jsonl"))
     monkeypatch.setattr(config, "HIDDEN_JOBS_PATH", str(state_dir / "hidden-jobs.json"))
     monkeypatch.setattr(config, "SCORE_NOTIFICATIONS_PATH", str(state_dir / "score-notifications.json"))
     monkeypatch.setattr(config, "CRAWLER_ACTIVE_LOCK_PATH", str(state_dir / "crawler-active.lock"))

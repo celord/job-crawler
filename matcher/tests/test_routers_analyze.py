@@ -56,6 +56,25 @@ def test_analyze_quick_partial_failure(client, monkeypatch):
     assert "LLM timeout" in body["results"][0]["error"]
 
 
+def test_analyze_quick_error_row_includes_error_type_http_status_and_model(client, monkeypatch):
+    from lib.llm_client import RetryableHttpError
+
+    async def fake_score(job, profile_data, model):
+        raise RetryableHttpError(429)
+
+    monkeypatch.setattr(analyze, "score_job_quick", fake_score)
+
+    resp = client.post(
+        "/analyze/quick", json={"jobs": [{"provider": "greenhouse", "source_key": "acme", "job_id": "1"}]}
+    )
+    assert resp.status_code == 200
+    row = resp.json()["results"][0]
+    assert row["status"] == "error"
+    assert row["error_type"] == "RetryableHttpError"
+    assert row["http_status"] == 429
+    assert row["model"] == analyze.settings.nvidia_model
+
+
 def test_analyze_quick_echoes_supplied_run_id(client, monkeypatch):
     async def fake_score(job, profile_data, model):
         return {"score": 80, "pipeline": "maverick"}
@@ -88,6 +107,38 @@ def test_analyze_ensemble_sequential(client, monkeypatch):
     )
     assert resp.status_code == 200
     assert resp.json()["results"][0]["analysis"]["score"] == 90
+
+
+def test_analyze_ensemble_reports_scorer_skips(client, monkeypatch):
+    async def fake_score(job, profile_data):
+        return {"score": 90, "pipeline": "ensemble", "_scorer_skips": ["moonshotai/kimi-k2.6"]}
+
+    monkeypatch.setattr(analyze, "score_job_ensemble", fake_score)
+
+    resp = client.post(
+        "/analyze/ensemble", json={"jobs": [{"provider": "lever", "source_key": "acme", "job_id": "1"}]}
+    )
+    assert resp.status_code == 200
+    row = resp.json()["results"][0]
+    assert row["status"] == "ok"
+    assert row["scorer_skips"] == ["moonshotai/kimi-k2.6"]
+    assert "_scorer_skips" not in row["analysis"]
+
+
+def test_analyze_ensemble_error_row_includes_error_type_and_model(client, monkeypatch):
+    async def fake_score(job, profile_data):
+        raise RuntimeError("ensemble synthesizer failed: bad JSON")
+
+    monkeypatch.setattr(analyze, "score_job_ensemble", fake_score)
+
+    resp = client.post(
+        "/analyze/ensemble", json={"jobs": [{"provider": "lever", "source_key": "acme", "job_id": "1"}]}
+    )
+    assert resp.status_code == 200
+    row = resp.json()["results"][0]
+    assert row["status"] == "error"
+    assert row["error_type"] == "RuntimeError"
+    assert row["model"] == analyze.settings.nvidia_ensemble_synthesizer
 
 
 def test_analyze_ensemble_bounded_concurrency(client, monkeypatch):

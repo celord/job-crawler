@@ -212,6 +212,47 @@ export function useDeleteQueueItem() {
   });
 }
 
+export function useClearQueue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (scope: "finished" | "all") => {
+      const { data } = await api.post<{ ok: boolean; removed: number }>("/queue/clear", { scope });
+      return data;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["queue"] }),
+  });
+}
+
+export function useDownloadErrorLog() {
+  return useMutation({
+    mutationFn: async () => {
+      const response = await api.get<Blob>("/queue/errors", { responseType: "blob" });
+      const disposition = String(response.headers?.["content-disposition"] ?? "");
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      const filename =
+        match?.[1] ?? `queue-errors-${new Date().toISOString().slice(0, 10)}.jsonl`;
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      return filename;
+    },
+  });
+}
+
+export function useClearErrorLog() {
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post<{ ok: boolean; removed: number }>("/queue/errors/clear");
+      return data;
+    },
+  });
+}
+
 export function useAutoAnalyzer() {
   return useQuery({
     queryKey: ["auto-analyzer"],

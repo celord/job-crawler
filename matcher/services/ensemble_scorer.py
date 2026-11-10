@@ -354,6 +354,8 @@ async def score_job_ensemble(job: dict, profile_data: dict) -> dict:
     cache_dir = _scorer_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    skipped_scorers: list[str] = []
+
     async def run_scorer(model: str) -> tuple[str, dict] | None:
         cache_path = _scorer_cache_path(job_id, model)
         if cache_path.exists():
@@ -363,6 +365,7 @@ async def score_job_ensemble(job: dict, profile_data: dict) -> dict:
                 pass  # corrupt cache — re-run
         parsed = await score_with_model(model, system_with_profile, user_msg)
         if parsed is None:
+            skipped_scorers.append(model)
             return None
         cache_path.write_text(json.dumps(parsed, ensure_ascii=False), encoding="utf-8")
         return model, parsed
@@ -401,7 +404,6 @@ async def score_job_ensemble(job: dict, profile_data: dict) -> dict:
         synth_system = SYNTHESIS_SYSTEM + "\n\nCandidate profile:\n" + profile_text
 
         synth_retries = 3
-        last_exc: Exception | None = None
         for attempt in range(1, synth_retries + 1):
             synth_raw = await llm_client.chat_completions(
                 model=settings.nvidia_ensemble_synthesizer,
@@ -417,9 +419,8 @@ async def score_job_ensemble(job: dict, profile_data: dict) -> dict:
                 synth_cache_path.write_text(json.dumps(synthesis, ensure_ascii=False), encoding="utf-8")
                 break
             except Exception as exc:
-                last_exc = exc
                 if attempt == synth_retries:
-                    raise last_exc
+                    raise RuntimeError(f"ensemble synthesizer failed: {exc}") from exc
 
     scorecard = synthesis.get("scorecard", {})
     score_100 = score_to_100(scorecard)
@@ -448,6 +449,8 @@ async def score_job_ensemble(job: dict, profile_data: dict) -> dict:
         "pipeline": "ensemble",
     }
     analysis = apply_match_guardrails(analysis, match_context)
+    if skipped_scorers:
+        analysis["_scorer_skips"] = skipped_scorers
 
     # Clean up scorer cache now that the job succeeded.
     for model in settings.nvidia_ensemble_scorers:

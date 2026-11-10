@@ -12,7 +12,7 @@ import aiofiles
 
 import config
 from db import execute
-from services import matcher_client, queue_store
+from services import error_log, matcher_client, queue_store
 from services.analysis import persist_run_results
 from services.company import company_name, is_real_compensation, sanitize_job
 from services.notifications import notify_discord_for_score
@@ -31,6 +31,29 @@ _RUN_ID_SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _pipeline_from_mode(mode: str) -> str:
+    return "ensemble" if mode == "claude-ensemble" else "quick"
+
+
+def _score_stage(mode: str) -> str:
+    return "ensemble scoring" if mode == "claude-ensemble" else "quick scoring"
+
+
+def _job_key_of(job: dict) -> str:
+    return f"{job.get('provider', '')}|{job.get('source_key', '')}|{job.get('job_id', '')}"
+
+
+def _stage_for_error_row(row: dict, pipeline: str) -> str:
+    if pipeline != "ensemble":
+        return "quick scoring"
+    message = str(row.get("error") or "")
+    if message.startswith("All scorers failed"):
+        return "ensemble scorers"
+    if message.startswith("ensemble synthesizer failed"):
+        return "synthesizer"
+    return "ensemble"
 
 
 def generate_run_id() -> str:
@@ -319,7 +342,19 @@ async def write_batch_input(run_id: str, jobs: list[dict], manifest: dict) -> di
         else:
             parsed, parse_error = {}, parse_error_by_idx.get(idx, "Unknown parse failure")
 
-        if not parse_error:
+        if parse_error:
+            await error_log.append_error(
+                {
+                    "level": "warning",
+                    "job_key": _job_key_of(job),
+                    "pipeline": _pipeline_from_mode(manifest.get("mode") or ""),
+                    "run_id": run_id,
+                    "stage": "parse",
+                    "error_type": "ParseError",
+                    "message": parse_error,
+                }
+            )
+        else:
             parsed_count += 1
         lines.append(_build_input_line(job, parsed, parse_error))
 
@@ -410,6 +445,20 @@ async def run_scorer_phase(run_id: str, mode: str, queue_items: list[dict]) -> l
     except Exception as exc:
         message = str(exc) or type(exc).__name__
         await append_match_run_log(run_id, f"[score] failed | {message}")
+        response = getattr(exc, "response", None)
+        http_status = getattr(response, "status_code", None)
+        for item in queue_items:
+            await error_log.append_error(
+                {
+                    "job_key": item.get("job_key") or "",
+                    "pipeline": _pipeline_from_mode(mode),
+                    "run_id": run_id,
+                    "stage": _score_stage(mode),
+                    "error_type": type(exc).__name__,
+                    "message": message,
+                    "http_status": http_status,
+                }
+            )
         raise RuntimeError(message) from exc
 
     for row in results:
@@ -420,6 +469,37 @@ async def run_scorer_phase(run_id: str, mode: str, queue_items: list[dict]) -> l
         # mirroring what the old subprocess's --pipeline flag used to do.
         if row.get("status") == "ok" and isinstance(row.get("analysis"), dict):
             row["analysis"]["pipeline"] = mode
+
+    pipeline = _pipeline_from_mode(mode)
+    for row in results:
+        job_key = _job_key_of(row)
+        if row.get("status") == "error":
+            await error_log.append_error(
+                {
+                    "job_key": job_key,
+                    "pipeline": pipeline,
+                    "run_id": run_id,
+                    "stage": _stage_for_error_row(row, pipeline),
+                    "error_type": row.get("error_type") or "AnalysisError",
+                    "message": row.get("error") or "",
+                    "http_status": row.get("http_status"),
+                    "model": row.get("model"),
+                }
+            )
+        for scorer_model in row.get("scorer_skips") or []:
+            await error_log.append_error(
+                {
+                    "level": "warning",
+                    "job_key": job_key,
+                    "pipeline": "ensemble",
+                    "run_id": run_id,
+                    "stage": scorer_model,
+                    "error_type": "ScorerSkip",
+                    "message": "ensemble scorer skipped (LLM call failed or returned invalid JSON); "
+                    "synthesis continued without it",
+                    "model": scorer_model,
+                }
+            )
 
     if results and all(r.get("status") == "error" for r in results):
         first_error = results[0].get("error")
@@ -456,8 +536,12 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
 
     await asyncio.gather(*(queue_store.upsert_queue_item(i) for i in queue_items))
 
+    failure_stage = "score"
     try:
         results = await run_scorer_phase(run_id, mode, queue_items)
+        # Score-phase failures log their own error entries before re-raising;
+        # only failures past this point are persistence failures.
+        failure_stage = "persistence"
         matched_count = len([r for r in results if r.get("status") == "ok"])
 
         discord_started = _now_iso()
@@ -502,6 +586,18 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
         await write_manifest(run_id, manifest)
     except Exception as exc:
         err_msg = str(exc)
+        if failure_stage == "persistence":
+            for item in queue_items:
+                await error_log.append_error(
+                    {
+                        "job_key": item.get("job_key") or "",
+                        "pipeline": _pipeline_from_mode(mode),
+                        "run_id": run_id,
+                        "stage": "persistence",
+                        "error_type": type(exc).__name__,
+                        "message": err_msg,
+                    }
+                )
         for item in queue_items:
             next_attempt = item["attempt"] + 1
             is_permanent = not config.AUTO_RETRY_ENABLED or next_attempt >= item["max_attempts"]
