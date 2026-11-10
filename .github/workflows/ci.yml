@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: ${{ matrix.service }} lint + test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: viewer
+            lint: lint
+            test: test
+          - service: matcher
+            lint: matcher-lint
+            test: matcher-test
+          - service: scheduler
+            lint: scheduler-lint
+            test: scheduler-test
+          - service: crawler
+            lint: crawler-lint
+            test: crawler-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      # Every recipe below runs through Docker (see justfile). No host
+      # python/pip is used. Docker layer caching is intentionally skipped:
+      # the justfile invokes `docker build` directly, so enabling it would
+      # require justfile changes. Follow-up.
+      - name: Lint ${{ matrix.service }}
+        run: just ${{ matrix.lint }}
+
+      - name: Test ${{ matrix.service }}
+        run: just ${{ matrix.test }}
+
+  frontend:
+    name: frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # viewer/Dockerfile builds the React app inside the image
+      # (npm ci + tsc -b + vite build); no host npm/npx is used.
+      # docker-compose.yml marks .env as `required: false`, so no .env
+      # stub is needed here.
+      - name: Build viewer image (includes frontend build)
+        run: docker compose build viewer
