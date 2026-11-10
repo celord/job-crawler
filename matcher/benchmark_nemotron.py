@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """Quick benchmark: nemotron-super-49b vs maverick vs kimi on trimmed JDs."""
-import os, requests, json, time, re, concurrent.futures
+import concurrent.futures
+import json
+import os
+import re
+import time
+
+import requests
 
 API_KEY = os.environ["NVIDIA_API_KEY"]
 URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
 SYSTEM = (
-    'You are a senior technical recruiting evaluator. Evaluate the job posting and return ONLY valid JSON '
-    'with this exact structure:\n'
+    "You are a senior technical recruiting evaluator. Evaluate the job posting and return ONLY valid JSON "
+    "with this exact structure:\n"
     '{"archetype": {"primary": "...", "secondary": "..."}, "role_summary": {"domain": "...", "seniority": "...", "remote_policy": "...", "tldr": "..."}, '
     '"scorecard": {"core_skills": {"score": 4.0, "reason": "..."}, "relevant_experience": {"score": 4.0, "reason": "..."}, '
     '"target_alignment": {"score": 4.0, "reason": "..."}, "seniority_fit": {"score": 4.0, "reason": "..."}, '
     '"workplace_fit": {"score": 4.0, "reason": "..."}, "requirements_coverage": {"score": 4.0, "reason": "..."}}, '
     '"forces": ["...", "...", "..."], "faiblesses": ["...", "..."], "blockers": [], "verdict": "yes", "remarques": "..."}\n'
-    'Scores 1.0-5.0. Return JSON only, no markdown, no explanation.'
+    "Scores 1.0-5.0. Return JSON only, no markdown, no explanation."
 )
 
 PROFILE = (
@@ -105,6 +111,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=9) as pool:
         else:
             sc = parsed.get("scorecard", {})
             avg = round(sum(v.get("score", 0) for v in sc.values()) / len(sc), 2) if sc else 0
-            print(f"[{elapsed}s] OK    {short_model[:40]} | {jd_name[:38]} | avg={avg} verdict={parsed.get('verdict', '?')}")
+            print(
+                f"[{elapsed}s] OK    {short_model[:40]} | {jd_name[:38]} | avg={avg} verdict={parsed.get('verdict', '?')}"
+            )
             print(json.dumps(parsed, indent=2, ensure_ascii=False))
             print("---")

@@ -54,8 +54,11 @@ Check D — Geographic eligibility:
 === END PRE-SCORING CHECKS ===
 """
 
-SCORER_SYSTEM = """You are a senior technical recruiting evaluator. Evaluate the job posting against the candidate profile.
-""" + _PRE_SCORING_CHECKS + """
+SCORER_SYSTEM = (
+    """You are a senior technical recruiting evaluator. Evaluate the job posting against the candidate profile.
+"""
+    + _PRE_SCORING_CHECKS
+    + """
 Return ONLY valid JSON, no markdown, no explanation:
 {
   "archetype": {"primary": "...", "secondary": "..."},
@@ -76,9 +79,13 @@ Return ONLY valid JSON, no markdown, no explanation:
   "remarques": "..."
 }
 Scores 1.0-5.0."""
+)
 
-SYNTHESIS_SYSTEM = """You are a senior technical recruiting evaluator synthesizing multiple independent analyses of the same candidate + job.
-""" + _PRE_SCORING_CHECKS + """
+SYNTHESIS_SYSTEM = (
+    """You are a senior technical recruiting evaluator synthesizing multiple independent analyses of the same candidate + job.
+"""
+    + _PRE_SCORING_CHECKS
+    + """
 Synthesis rules:
 - If models agree on a score (within 0.5), use that score.
 - If models diverge, reason through which is most accurate; explain in the reason field.
@@ -106,6 +113,7 @@ Return ONLY valid JSON, no markdown, no explanation:
   "remarques": "..."
 }
 Scores 1.0-5.0."""
+)
 
 
 def log(msg):
@@ -163,7 +171,9 @@ def call_model(model, system, user_content, max_tokens=2000, temperature=0.2, re
             if attempt == retries:
                 raise
             wait = attempt * 2
-            log(f"[ensemble] {model.split('/')[-1]} | attempt {attempt}/{retries} failed: {e} | retrying in {wait}s")
+            log(
+                f"[ensemble] {model.split('/')[-1]} | attempt {attempt}/{retries} failed: {e} | retrying in {wait}s"
+            )
             time.sleep(wait)
 
 
@@ -181,9 +191,12 @@ def score_to_100(scorecard):
 
 
 def infer_recommendation(score_5):
-    if score_5 >= 4.5: return "apply_now"
-    if score_5 >= 4.0: return "worth_applying"
-    if score_5 >= 3.5: return "only_if_strategic"
+    if score_5 >= 4.5:
+        return "apply_now"
+    if score_5 >= 4.0:
+        return "worth_applying"
+    if score_5 >= 3.5:
+        return "only_if_strategic"
     return "do_not_apply"
 
 
@@ -194,9 +207,12 @@ def score_100_to_5(score):
 def remove_location_false_positives(analysis):
     terms = ("geographic mismatch", "location mismatch", "state exclusion", "country mismatch")
     for key in ("blockers", "faiblesses"):
-        analysis[key] = [item for item in analysis.get(key, []) if not any(term in str(item).lower() for term in terms)]
+        analysis[key] = [
+            item for item in analysis.get(key, []) if not any(term in str(item).lower() for term in terms)
+        ]
     analysis["gaps"] = [
-        item for item in analysis.get("gaps", [])
+        item
+        for item in analysis.get("gaps", [])
         if not any(term in str(item.get("gap", "")).lower() for term in terms)
     ]
 
@@ -221,7 +237,9 @@ def apply_match_guardrails(analysis, match_context):
             workplace["score"] = min(float(workplace.get("score", 3.0) or 3.0), 1.5)
             workplace["reason"] = reason or "Structured location check found the role incompatible."
         if not any(item.get("gap") == blocker for item in analysis.get("gaps", [])):
-            analysis.setdefault("gaps", []).append({"gap": blocker, "severity": "high", "blocker": True, "mitigation": ""})
+            analysis.setdefault("gaps", []).append(
+                {"gap": blocker, "severity": "high", "blocker": True, "mitigation": ""}
+            )
 
     if not analysis.get("tool_match"):
         analysis["tool_match"] = [
@@ -347,7 +365,10 @@ def process_batch(input_file, output_file, profile_text, pipeline_tag="codex-ens
                     "tool_match": synthesis.get("tool_match", []),
                     "forces": synthesis.get("forces", []),
                     "faiblesses": synthesis.get("faiblesses", []),
-                    "gaps": [{"gap": f, "severity": "medium", "blocker": False, "mitigation": ""} for f in synthesis.get("faiblesses", [])],
+                    "gaps": [
+                        {"gap": f, "severity": "medium", "blocker": False, "mitigation": ""}
+                        for f in synthesis.get("faiblesses", [])
+                    ],
                     "blockers": blockers,
                     "standout_differentiator": synthesis.get("remarques", ""),
                     "remarques": synthesis.get("remarques", ""),
@@ -367,12 +388,19 @@ def process_batch(input_file, output_file, profile_text, pipeline_tag="codex-ens
                 }
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
                 succeeded += 1
-                log(f"[ensemble-batch] {job_label} | done | score={score_100} verdict={verdict} elapsed={row['elapsed']}s")
+                log(
+                    f"[ensemble-batch] {job_label} | done | score={score_100} verdict={verdict} elapsed={row['elapsed']}s"
+                )
             except Exception as e:
                 log(f"[ensemble-batch] {job_label} | error: {e}")
                 row = {
-                    "provider": provider, "source_key": source_key, "job_id": job_id,
-                    "title": title, "status": "error", "score": 0, "verdict": "no",
+                    "provider": provider,
+                    "source_key": source_key,
+                    "job_id": job_id,
+                    "title": title,
+                    "status": "error",
+                    "score": 0,
+                    "verdict": "no",
                     "error": str(e)[:300],
                 }
                 out.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -388,7 +416,9 @@ def main():
     parser.add_argument("--jobs-jsonl", required=True)
     parser.add_argument("--results-jsonl", required=True)
     parser.add_argument("--profile-dir", default=DEFAULT_PROFILE_DIR)
-    parser.add_argument("--pipeline", default="codex-ensemble", help="Pipeline tag written to analysis.pipeline")
+    parser.add_argument(
+        "--pipeline", default="codex-ensemble", help="Pipeline tag written to analysis.pipeline"
+    )
     args = parser.parse_args()
 
     if not API_KEY:

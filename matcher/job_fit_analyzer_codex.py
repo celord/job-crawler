@@ -359,7 +359,7 @@ def extract_json_payload(content):
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:
-            return json.loads(text[start:end + 1])
+            return json.loads(text[start : end + 1])
         raise
 
 
@@ -425,13 +425,15 @@ def normalize_analysis_result(result):
             importance = str(item.get("importance", "important")).strip().lower()
             if importance not in {"must_have", "important", "nice_to_have"}:
                 importance = "important"
-            normalized_evidence.append({
-                "requirement": sanitize_text(item.get("requirement", "")),
-                "profile_evidence": sanitize_text(item.get("profile_evidence", "")),
-                "fit": fit,
-                "source": sanitize_text(item.get("source", "")),
-                "importance": importance,
-            })
+            normalized_evidence.append(
+                {
+                    "requirement": sanitize_text(item.get("requirement", "")),
+                    "profile_evidence": sanitize_text(item.get("profile_evidence", "")),
+                    "fit": fit,
+                    "source": sanitize_text(item.get("source", "")),
+                    "importance": importance,
+                }
+            )
 
     normalized_requirement_match = []
     requirement_match = result.get("requirement_match")
@@ -445,14 +447,16 @@ def normalize_analysis_result(result):
             gap_type = str(item.get("gap_type", "unknown")).strip().lower()
             if gap_type not in {"none", "adjacent_only", "direct_gap", "unknown"}:
                 gap_type = "unknown"
-            normalized_requirement_match.append({
-                "requirement": sanitize_text(item.get("requirement", "")),
-                "profile_evidence": sanitize_text(item.get("profile_evidence", "")),
-                "strength": strength,
-                "gap_type": gap_type,
-                "is_blocker": bool(item.get("is_blocker", False)),
-                "mitigation": sanitize_text(item.get("mitigation", "")),
-            })
+            normalized_requirement_match.append(
+                {
+                    "requirement": sanitize_text(item.get("requirement", "")),
+                    "profile_evidence": sanitize_text(item.get("profile_evidence", "")),
+                    "strength": strength,
+                    "gap_type": gap_type,
+                    "is_blocker": bool(item.get("is_blocker", False)),
+                    "mitigation": sanitize_text(item.get("mitigation", "")),
+                }
+            )
 
     normalized_tool_match = []
     tool_match = result.get("tool_match")
@@ -466,12 +470,14 @@ def normalize_analysis_result(result):
             importance = str(item.get("importance", "important")).strip().lower()
             if importance not in {"must_have", "important", "nice_to_have"}:
                 importance = "important"
-            normalized_tool_match.append({
-                "tool": sanitize_text(item.get("tool", "")),
-                "profile_evidence": sanitize_text(item.get("profile_evidence", "")),
-                "strength": strength,
-                "importance": importance,
-            })
+            normalized_tool_match.append(
+                {
+                    "tool": sanitize_text(item.get("tool", "")),
+                    "profile_evidence": sanitize_text(item.get("profile_evidence", "")),
+                    "strength": strength,
+                    "importance": importance,
+                }
+            )
 
     normalized_gaps = []
     gaps = result.get("gaps")
@@ -482,12 +488,14 @@ def normalize_analysis_result(result):
             severity = str(item.get("severity", "medium")).strip().lower()
             if severity not in {"low", "medium", "high"}:
                 severity = "medium"
-            normalized_gaps.append({
-                "gap": sanitize_text(item.get("gap", "")),
-                "severity": severity,
-                "blocker": bool(item.get("blocker", False)),
-                "mitigation": sanitize_text(item.get("mitigation", "")),
-            })
+            normalized_gaps.append(
+                {
+                    "gap": sanitize_text(item.get("gap", "")),
+                    "severity": severity,
+                    "blocker": bool(item.get("blocker", False)),
+                    "mitigation": sanitize_text(item.get("mitigation", "")),
+                }
+            )
 
     role_summary = result.get("role_summary")
     if not isinstance(role_summary, dict):
@@ -534,35 +542,57 @@ def remove_location_false_positives(analysis):
     location_terms = ("geographic mismatch", "location mismatch", "state exclusion", "country mismatch")
     for key in ("blockers", "faiblesses"):
         analysis[key] = [
-            item for item in analysis.get(key, [])
+            item
+            for item in analysis.get(key, [])
             if not any(term in str(item).lower() for term in location_terms)
         ]
     analysis["gaps"] = [
-        item for item in analysis.get("gaps", [])
+        item
+        for item in analysis.get("gaps", [])
         if not any(term in str(item.get("gap", "")).lower() for term in location_terms)
     ]
 
 
 def add_gap_once(analysis, gap):
-    existing = {str(item.get("gap", "")).strip().lower() for item in analysis.get("gaps", []) if isinstance(item, dict)}
+    existing = {
+        str(item.get("gap", "")).strip().lower()
+        for item in analysis.get("gaps", [])
+        if isinstance(item, dict)
+    }
     if str(gap.get("gap", "")).strip().lower() not in existing:
         analysis.setdefault("gaps", []).append(gap)
 
 
 _CONSULTING_SIGNALS = (
-    "billable hours", "client delivery", "client engagement", "placed at client",
-    "work at client", "on-site at client", "client-facing delivery", "consulting firm",
-    "professional services firm", "staffing firm", "accenture", "mckinsey", "deloitte",
-    "bcg", "bain", "kpmg", "pwc", "ernst & young", "big 4", "boutique consulting",
+    "billable hours",
+    "client delivery",
+    "client engagement",
+    "placed at client",
+    "work at client",
+    "on-site at client",
+    "client-facing delivery",
+    "consulting firm",
+    "professional services firm",
+    "staffing firm",
+    "accenture",
+    "mckinsey",
+    "deloitte",
+    "bcg",
+    "bain",
+    "kpmg",
+    "pwc",
+    "ernst & young",
+    "big 4",
+    "boutique consulting",
 )
 
 
 _TOOL_BLOCKER_PATTERNS = re.compile(
-    r'\b(unmet hard requirement|hard requirement unmet|missing.*tool|tooling gap|no.*experience with|lacks.*experience with)\b',
+    r"\b(unmet hard requirement|hard requirement unmet|missing.*tool|tooling gap|no.*experience with|lacks.*experience with)\b",
     re.IGNORECASE,
 )
 _SOFTENED_TOOL_PATTERN = re.compile(
-    r'(?:tools?\s+(?:like|such as|including)|familiarity with|experience with tools like)\s+(\w[\w\s\-\.]+)',
+    r"(?:tools?\s+(?:like|such as|including)|familiarity with|experience with tools like)\s+(\w[\w\s\-\.]+)",
     re.IGNORECASE,
 )
 
@@ -586,12 +616,26 @@ def _remove_softened_tool_blockers(analysis, jd_text):
     if not demoted:
         return
     analysis["blockers"] = kept_blockers
-    existing = {str(item.get("gap", "")).strip().lower() for item in analysis.get("gaps", []) if isinstance(item, dict)}
+    existing = {
+        str(item.get("gap", "")).strip().lower()
+        for item in analysis.get("gaps", [])
+        if isinstance(item, dict)
+    }
     for b in demoted:
-        gap_text = str(b).replace("Unmet hard requirement: ", "Tool ramp-up: ").replace("Hard requirement unmet: ", "Tool ramp-up: ")
+        gap_text = (
+            str(b)
+            .replace("Unmet hard requirement: ", "Tool ramp-up: ")
+            .replace("Hard requirement unmet: ", "Tool ramp-up: ")
+        )
         if gap_text.lower() not in existing:
-            analysis.setdefault("gaps", []).append({"gap": gap_text, "severity": "low", "blocker": False,
-                "mitigation": "JD uses softening language ('tools like X') — direct tool experience not strictly required."})
+            analysis.setdefault("gaps", []).append(
+                {
+                    "gap": gap_text,
+                    "severity": "low",
+                    "blocker": False,
+                    "mitigation": "JD uses softening language ('tools like X') — direct tool experience not strictly required.",
+                }
+            )
 
 
 def _remove_consulting_false_positive(analysis, jd_text):
@@ -606,14 +650,15 @@ def _remove_consulting_false_positive(analysis, jd_text):
         return
     analysis["blockers"] = [b for b in blockers if consulting_blocker_prefix not in str(b).lower()]
     analysis["gaps"] = [
-        g for g in analysis.get("gaps", [])
-        if consulting_blocker_prefix not in str(g.get("gap", "")).lower()
+        g for g in analysis.get("gaps", []) if consulting_blocker_prefix not in str(g.get("gap", "")).lower()
     ]
     scorecard = analysis.get("scorecard") or {}
     target = scorecard.get("target_alignment")
     if isinstance(target, dict) and float(target.get("score", 5.0) or 5.0) <= 2.0:
         target["score"] = 3.5
-        target["reason"] = "[Guardrail] Check A false positive removed — no explicit consulting signals in JD."
+        target["reason"] = (
+            "[Guardrail] Check A false positive removed — no explicit consulting signals in JD."
+        )
 
 
 def _enforce_hard_blocker_guardrail(analysis):
@@ -650,12 +695,15 @@ def _enforce_hard_blocker_guardrail(analysis):
         blocker_text = f"Hard requirement unmet: {item.get('requirement', 'required experience')} — no direct evidence in profile."
         if not any(blocker_text.lower()[:40] in str(b).lower() for b in analysis.get("blockers", [])):
             analysis.setdefault("blockers", []).append(blocker_text)
-        add_gap_once(analysis, {
-            "gap": blocker_text,
-            "severity": "high",
-            "blocker": True,
-            "mitigation": "",
-        })
+        add_gap_once(
+            analysis,
+            {
+                "gap": blocker_text,
+                "severity": "high",
+                "blocker": True,
+                "mitigation": "",
+            },
+        )
 
 
 def apply_match_guardrails(analysis, match_context):
@@ -720,24 +768,23 @@ def calculate_fit(jd_text, system_prompt, api_key, model, job_label=None, profil
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt, "cache_control": {"type": "ephemeral"}},
-            {"role": "user", "content": user_content}
+            {"role": "user", "content": user_content},
         ],
         "temperature": 0.2,
         "max_tokens": 2600,
-        "response_format": {"type": "json_object"}
+        "response_format": {"type": "json_object"},
     }
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             if job_label:
                 log_progress(f"[match] {job_label} | calling NVIDIA NIM | attempt {attempt}/{MAX_RETRIES}")
-            response = requests.post(f"{NVIDIA_URL}/chat/completions", headers=headers, json=payload, timeout=60)
+            response = requests.post(
+                f"{NVIDIA_URL}/chat/completions", headers=headers, json=payload, timeout=60
+            )
             response.raise_for_status()
 
             result = response.json()
@@ -757,7 +804,9 @@ def calculate_fit(jd_text, system_prompt, api_key, model, job_label=None, profil
 
         except json.JSONDecodeError:
             last_error = "non_json_response"
-            log_progress(f"[match] {job_label or 'job'} | non-JSON response | attempt {attempt}/{MAX_RETRIES}")
+            log_progress(
+                f"[match] {job_label or 'job'} | non-JSON response | attempt {attempt}/{MAX_RETRIES}"
+            )
         except requests.exceptions.RequestException as e:
             last_error = str(e)
             log_progress(f"[match] {job_label or 'job'} | API error | attempt {attempt}/{MAX_RETRIES} | {e}")
@@ -802,7 +851,7 @@ def save_result(jd_text, result, output_file=None):
     rapport = {
         "date": timestamp,
         "jd": jd_text[:500] + "..." if len(jd_text) > 500 else jd_text,
-        "analyse": result
+        "analyse": result,
     }
 
     filename = output_file if output_file else f"job_fit_report_{timestamp}.json"
@@ -932,13 +981,24 @@ def synthesize_jd_text(record):
     return "\n\n".join(section for section in sections if section.strip())
 
 
-def process_batch(input_file, output_file, system_prompt, api_key, model, dry_run=False, profile_text="", pipeline_tag="codex"):
+def process_batch(
+    input_file,
+    output_file,
+    system_prompt,
+    api_key,
+    model,
+    dry_run=False,
+    profile_text="",
+    pipeline_tag="codex",
+):
     """Processes a JSONL file of structured job postings and writes a JSONL of results."""
     total = 0
     succeeded = 0
     failed = 0
 
-    log_progress(f"[batch] start | input={input_file} output={output_file} dry_run={str(dry_run).lower()} model={model}")
+    log_progress(
+        f"[batch] start | input={input_file} output={output_file} dry_run={str(dry_run).lower()} model={model}"
+    )
 
     with open(input_file, "r", encoding="utf-8") as src, open(output_file, "w", encoding="utf-8") as dst:
         for line_number, raw_line in enumerate(src, start=1):
@@ -953,11 +1013,13 @@ def process_batch(input_file, output_file, system_prompt, api_key, model, dry_ru
             except json.JSONDecodeError as exc:
                 failed += 1
                 log_progress(f"[batch] line {line_number} | invalid json | {exc}")
-                dst.write(json.dumps({
-                    "line_number": line_number,
-                    "status": "error",
-                    "error": f"Invalid JSON: {exc}"
-                }, ensure_ascii=False) + "\n")
+                dst.write(
+                    json.dumps(
+                        {"line_number": line_number, "status": "error", "error": f"Invalid JSON: {exc}"},
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
                 continue
 
             job_label = format_job_label(record, line_number=line_number)
@@ -969,18 +1031,27 @@ def process_batch(input_file, output_file, system_prompt, api_key, model, dry_ru
             elif dry_run:
                 match_context = build_match_context(jd_text, profile_text)
                 match_context["_jd_text"] = jd_text
-                analysis = apply_match_guardrails(normalize_analysis_result({
-                    "archetype": {"primary": "Simulation", "secondary": ""},
-                    "scorecard": {key: {"score": 3.75, "reason": "Mode dry-run"} for key in SCORING_DIMENSIONS},
-                    "forces": ["Simulation"],
-                    "faiblesses": ["Mode dry-run"],
-                    "blockers": [],
-                    "verdict": "simulation",
-                    "posting_legitimacy": {"assessment": "unknown", "reasoning": ["Mode dry-run"]},
-                }), match_context)
+                analysis = apply_match_guardrails(
+                    normalize_analysis_result(
+                        {
+                            "archetype": {"primary": "Simulation", "secondary": ""},
+                            "scorecard": {
+                                key: {"score": 3.75, "reason": "Mode dry-run"} for key in SCORING_DIMENSIONS
+                            },
+                            "forces": ["Simulation"],
+                            "faiblesses": ["Mode dry-run"],
+                            "blockers": [],
+                            "verdict": "simulation",
+                            "posting_legitimacy": {"assessment": "unknown", "reasoning": ["Mode dry-run"]},
+                        }
+                    ),
+                    match_context,
+                )
                 log_progress(f"[batch] {job_label} | dry-run | score={analysis.get('score', 0)}")
             else:
-                analysis = calculate_fit(jd_text, system_prompt, api_key, model, job_label=job_label, profile_text=profile_text)
+                analysis = calculate_fit(
+                    jd_text, system_prompt, api_key, model, job_label=job_label, profile_text=profile_text
+                )
 
             analysis["pipeline"] = pipeline_tag
             status = "ok" if not analysis.get("erreur") else "error"
@@ -1015,7 +1086,7 @@ def process_batch(input_file, output_file, system_prompt, api_key, model, dry_ru
                     "nice_to_have_requirements": record.get("nice_to_have_requirements"),
                     "technical_tools_mentioned": record.get("technical_tools_mentioned"),
                 },
-                "analysis": analysis
+                "analysis": analysis,
             }
             dst.write(json.dumps(output_row, ensure_ascii=False) + "\n")
 
@@ -1030,10 +1101,21 @@ def main():
     parser.add_argument("-o", "--output", help="Fichier de sortie pour le rapport")
     parser.add_argument("--jobs-jsonl", help="JSONL file of structured job postings to analyze in batch")
     parser.add_argument("--results-jsonl", help="JSONL output file for batch results")
-    parser.add_argument("-p", "--profile-dir", default=DEFAULT_PROFILE_DIR, help=f"Directory containing profile files (default: {DEFAULT_PROFILE_DIR})")
-    parser.add_argument("--model", default=os.environ.get("NVIDIA_MODEL", DEFAULT_MODEL), help=f"Modele NVIDIA NIM (defaut: {DEFAULT_MODEL})")
+    parser.add_argument(
+        "-p",
+        "--profile-dir",
+        default=DEFAULT_PROFILE_DIR,
+        help=f"Directory containing profile files (default: {DEFAULT_PROFILE_DIR})",
+    )
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("NVIDIA_MODEL", DEFAULT_MODEL),
+        help=f"Modele NVIDIA NIM (defaut: {DEFAULT_MODEL})",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Simulate without API call")
-    parser.add_argument("--pipeline", default="codex", help="Pipeline tag written to analysis.pipeline (default: codex)")
+    parser.add_argument(
+        "--pipeline", default="codex", help="Pipeline tag written to analysis.pipeline (default: codex)"
+    )
 
     args = parser.parse_args()
 
@@ -1059,7 +1141,16 @@ def main():
     if args.jobs_jsonl:
         print(f"📚 Batch analysis: {args.jobs_jsonl}")
         print(f"🧠 NVIDIA model: {args.model}")
-        summary = process_batch(args.jobs_jsonl, args.results_jsonl, system_prompt, api_key, args.model, dry_run=args.dry_run, profile_text=profile_text, pipeline_tag=args.pipeline)
+        summary = process_batch(
+            args.jobs_jsonl,
+            args.results_jsonl,
+            system_prompt,
+            api_key,
+            args.model,
+            dry_run=args.dry_run,
+            profile_text=profile_text,
+            pipeline_tag=args.pipeline,
+        )
         print(json.dumps(summary, ensure_ascii=False))
         return
 
@@ -1079,15 +1170,17 @@ def main():
     if args.dry_run:
         print("\n🔍 DRY RUN mode - no API call")
         print(f"System prompt (excerpt): {system_prompt[:200]}...")
-        result = normalize_analysis_result({
-            "archetype": {"primary": "Simulation", "secondary": ""},
-            "scorecard": {key: {"score": 3.75, "reason": "Dry-run mode"} for key in SCORING_DIMENSIONS},
-            "forces": ["Simulation"],
-            "faiblesses": ["Dry-run mode"],
-            "blockers": [],
-            "verdict": "simulation",
-            "posting_legitimacy": {"assessment": "unknown", "reasoning": ["Dry-run mode"]},
-        })
+        result = normalize_analysis_result(
+            {
+                "archetype": {"primary": "Simulation", "secondary": ""},
+                "scorecard": {key: {"score": 3.75, "reason": "Dry-run mode"} for key in SCORING_DIMENSIONS},
+                "forces": ["Simulation"],
+                "faiblesses": ["Dry-run mode"],
+                "blockers": [],
+                "verdict": "simulation",
+                "posting_legitimacy": {"assessment": "unknown", "reasoning": ["Dry-run mode"]},
+            }
+        )
     else:
         print("\n🤖 Calling NVIDIA NIM API...")
         result = calculate_fit(jd_text, system_prompt, api_key, args.model, profile_text=profile_text)

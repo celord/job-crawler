@@ -20,7 +20,6 @@ Exit codes:
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -29,14 +28,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 MATCHER_DIR = SCRIPT_DIR.parent
 sys.path.insert(0, str(MATCHER_DIR))
 
-from matching_intelligence import (
+from matching_intelligence import (  # noqa: E402 - needs sys.path set above
     build_candidate_model,
     build_job_model,
     evaluate_location_compatibility,
-    extract_location_policy,
-    extract_requirement_groups,
-    extract_tools,
-    build_profile_text,
 )
 
 DEFAULT_FIXTURES = SCRIPT_DIR / "fixtures.json"
@@ -50,6 +45,7 @@ WARN = "\033[93mWARN\033[0m"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def load_profile(profile_dir: Path) -> dict[str, str]:
     files = ["profile.yml", "portals.yml", "cv.md", "_profile.md"]
@@ -79,6 +75,7 @@ def section(title: str):
 # ---------------------------------------------------------------------------
 # Assertions per fixture
 # ---------------------------------------------------------------------------
+
 
 def run_fixture(fixture: dict, candidate: dict, verbose: bool) -> tuple[int, int]:
     """Run assertions for one fixture. Returns (passed, total)."""
@@ -189,17 +186,19 @@ def run_fixture(fixture: dict, candidate: dict, verbose: bool) -> tuple[int, int
     if verdict_must_not_be:
         # We can't check the LLM verdict without an API call; note this as informational
         if verbose:
-            print(f"  [{WARN}] verdict_must_not_be='{verdict_must_not_be}' — LLM-only check, skipped in deterministic eval")
+            print(
+                f"  [{WARN}] verdict_must_not_be='{verdict_must_not_be}' — LLM-only check, skipped in deterministic eval"
+            )
 
     # Show location policy details in verbose
     if verbose:
-        print(f"\n  Location policy extracted:")
+        print("\n  Location policy extracted:")
         print(f"    workplace_type: {policy.get('workplace_type')!r}")
         print(f"    eligible_countries: {policy.get('eligible_countries')}")
         print(f"    eligible_regions: {policy.get('eligible_regions')}")
         print(f"    excluded_regions: {policy.get('excluded_regions')}")
         print(f"    raw_signals: {policy.get('raw_signals')}")
-        print(f"\n  Location result:")
+        print("\n  Location result:")
         print(f"    status: {location_result.get('status')!r}")
         print(f"    reason: {location_result.get('reason')!r}")
         print(f"    confidence: {location_result.get('confidence')!r}")
@@ -217,6 +216,7 @@ def run_fixture(fixture: dict, candidate: dict, verbose: bool) -> tuple[int, int
 # Candidate model diagnostics
 # ---------------------------------------------------------------------------
 
+
 def show_candidate_model(candidate: dict, verbose: bool):
     section("Candidate Model (deterministic extract from profile)")
     print(f"  countries:     {candidate.get('countries')}")
@@ -228,7 +228,9 @@ def show_candidate_model(candidate: dict, verbose: bool):
     prefs = candidate.get("workplace_preferences") or {}
     print(f"  workplace pref: {prefs.get('preferred_types')}")
     comp = candidate.get("compensation") or {}
-    print(f"  compensation:  min={comp.get('minimum')} target={comp.get('target_min')}-{comp.get('target_max')} {comp.get('currency')}")
+    print(
+        f"  compensation:  min={comp.get('minimum')} target={comp.get('target_min')}-{comp.get('target_max')} {comp.get('currency')}"
+    )
     roles = candidate.get("target_roles") or {}
     print(f"  primary titles: {roles.get('primary_titles')}")
     archetypes = roles.get("archetypes") or []
@@ -240,9 +242,12 @@ def show_candidate_model(candidate: dict, verbose: bool):
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate matching_intelligence guardrails against fixtures")
-    parser.add_argument("--profile-dir", default=str(DEFAULT_PROFILE_DIR), help="Path to career-ops profile directory")
+    parser.add_argument(
+        "--profile-dir", default=str(DEFAULT_PROFILE_DIR), help="Path to career-ops profile directory"
+    )
     parser.add_argument("--fixtures", default=str(DEFAULT_FIXTURES), help="Path to fixtures JSON file")
     parser.add_argument("--filter", help="Run only fixture with this ID")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show full extraction details")
@@ -254,7 +259,7 @@ def main():
         profile_dir = MATCHER_DIR / profile_dir
 
     print(f"\n{'=' * 60}")
-    print(f"  Matching Intelligence — Deterministic Eval")
+    print("  Matching Intelligence — Deterministic Eval")
     print(f"{'=' * 60}")
     print(f"  Fixtures: {fixtures_path}")
     print(f"  Profile:  {profile_dir}")
@@ -287,12 +292,14 @@ def main():
         passed, total = run_fixture(fixture, candidate, verbose=args.verbose)
         total_passed += passed
         total_checks += total
-        fixture_results.append({
-            "id": fixture["id"],
-            "passed": passed,
-            "total": total,
-            "ok": passed == total,
-        })
+        fixture_results.append(
+            {
+                "id": fixture["id"],
+                "passed": passed,
+                "total": total,
+                "ok": passed == total,
+            }
+        )
 
     # Summary
     print(f"\n{'=' * 60}")
