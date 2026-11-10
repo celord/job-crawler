@@ -658,3 +658,12 @@ The riskiest parts are Epic 5 (Workday's pagination + relative-date parsing + co
 - **Gate C (Dockerized, contract-verified):** Epics 7–9 complete, Story 9.2's live viewer-against-real-crawler-output check passes. ✅ Passed (Batch 5) — verified via a real standalone Docker run against sample sources plus one real Greenhouse board (Asana, 126 real jobs), with a real viewer instance pointed at the resulting `catalog.sqlite` confirming `/api/jobs`, `/api/stats`, and `/api/crawl-status` all serve correctly. Lock-file lifecycle verified in both success and forced-failure runs.
 
 `crawler/src/` (the TypeScript source), `docker-entrypoint.sh`, `post-crawl.sh`, `package.json`, `package-lock.json`, and `tsconfig.json` were deleted in Batch 5 now that Gate C has passed.
+
+## On-disk contract: location fields (ticket 03)
+
+- `catalog_jobs.region TEXT`: one of `north_america`, `latam`, `europe`, `asia_pacific`, `middle_east_africa`, `global`, `remote_unspecified`, `unknown`. Added by an idempotent `ALTER TABLE` in `CatalogStore`, so existing catalogs keep their data.
+- `catalog_jobs.country TEXT`: ISO 3166-1 alpha-2 code, or NULL.
+- `remote` keeps its meaning. A remote job can also carry a `country` or `region`. A remote job with no geographic hint gets `remote_unspecified`; it is not dropped.
+- The viewer reads `LOCATION_FILTERS` at startup and exposes the resolved options as `locationOptions` from `/api/config`. `/api/jobs` takes repeated `location=<token>` and `includeUnspecified=1|0`.
+- iCIMS sitemaps carry no location data, so iCIMS rows stay `unknown`.
+- Existing rows are classified by `crawler/backfill_region_country.py`. It is idempotent and updates only `region` and `country`.
