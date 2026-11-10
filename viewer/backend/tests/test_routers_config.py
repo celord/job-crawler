@@ -11,6 +11,24 @@ def test_get_config_short_model_names(app_client, monkeypatch):
     assert body["savedSearchAnalyzerEnabled"] is True
 
 
+def test_get_config_location_options_default_order(app_client):
+    r = app_client.get("/api/config")
+    assert r.json()["locationOptions"] == [
+        {"token": "Costa Rica", "label": "Costa Rica"},
+        {"token": "Latam", "label": "Latam"},
+        {"token": "USA", "label": "USA"},
+    ]
+
+
+def test_get_config_location_options_follow_env(app_client, monkeypatch):
+    monkeypatch.setattr(config, "LOCATION_FILTERS", "Brazil,EMEA")
+    r = app_client.get("/api/config")
+    assert r.json()["locationOptions"] == [
+        {"token": "Brazil", "label": "Brazil"},
+        {"token": "EMEA", "label": "EMEA"},
+    ]
+
+
 def test_crawl_status_missing_progress_file_defaults_active(app_client):
     r = app_client.get("/api/crawl-status")
     body = r.json()

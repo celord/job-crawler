@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 import config
 from services.company import logo_dev_brand_cache
+from services.location_filter import resolve_location_options
 from services.notifications import read_hidden_jobs, write_hidden_jobs
 
 router = APIRouter(prefix="/api")
@@ -28,6 +29,12 @@ async def get_config() -> dict:
     )
     synth_env = config.NVIDIA_ENSEMBLE_SYNTHESIZER or "nvidia/llama-3.3-nemotron-super-49b-v1.5"
     scorers = [_short_model_name(m.strip()) for m in scorer_env.split(",") if m.strip()]
+    # Frontend renders whatever the server returns (ticket 03, B.3): keep
+    # the exact {"token", "label"} shape and the LOCATION_FILTERS order.
+    location_options = [
+        {"token": option.token, "label": option.label}
+        for option in resolve_location_options(config.LOCATION_FILTERS)
+    ]
     return {
         "ensembleScorers": scorers,
         "ensembleSynthesizer": _short_model_name(synth_env.strip()),
@@ -35,6 +42,7 @@ async def get_config() -> dict:
         "scoreNotifyMinScore": config.SCORE_NOTIFY_MIN_SCORE,
         "userLocation": config.USER_LOCATION,
         "savedSearchAnalyzerEnabled": config.SAVED_SEARCH_ANALYZER_ENABLED,
+        "locationOptions": location_options,
     }
 
 

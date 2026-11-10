@@ -1,8 +1,33 @@
 import { useState } from "react";
 
-import { useConfig, useQueue } from "../api/hooks";
+import {
+  useClearErrorLog,
+  useClearQueue,
+  useConfig,
+  useDownloadErrorLog,
+  useQueue,
+} from "../api/hooks";
+import { useToastStore } from "../stores/toastStore";
 import { useUiStore } from "../stores/uiStore";
+import { Modal } from "./Modal";
 import { QueueItem } from "./QueueItem";
+
+type ClearScope = "finished" | "all";
+
+const CLEAR_SCOPE_TITLE: Record<ClearScope, string> = {
+  finished: "Clear finished items?",
+  all: "Clear all items?",
+};
+
+const CLEAR_SCOPE_BODY: Record<ClearScope, string> = {
+  finished: "This removes finished items from the queue. Running, queued, and failed items stay.",
+  all: "This removes every item that is not currently running — including failed and stopped ones. Running items stay.",
+};
+
+const CLEAR_SCOPE_ACTION: Record<ClearScope, string> = {
+  finished: "Clear finished items",
+  all: "Clear all items",
+};
 
 export function QueueDrawer() {
   const isOpen = useUiStore((s) => s.isQueueDrawerOpen);
@@ -10,7 +35,13 @@ export function QueueDrawer() {
   const setActivePanelJobKey = useUiStore((s) => s.setActivePanelJobKey);
   const queue = useQueue();
   const config = useConfig();
+  const clearQueue = useClearQueue();
+  const downloadErrorLog = useDownloadErrorLog();
+  const clearErrorLog = useClearErrorLog();
+  const addToast = useToastStore((s) => s.addToast);
   const [dismissedToApply, setDismissedToApply] = useState<Set<string>>(new Set());
+  const [confirmClear, setConfirmClear] = useState<ClearScope | null>(null);
+  const [confirmClearErrors, setConfirmClearErrors] = useState(false);
 
   if (!isOpen) return null;
 
@@ -18,6 +49,28 @@ export function QueueDrawer() {
   const toApply = (queue.data ?? []).filter(
     (item) => item.score !== null && item.score >= minScore && !dismissedToApply.has(item.id),
   );
+
+  const handleClearQueue = () => {
+    if (!confirmClear) return;
+    const scope = confirmClear;
+    setConfirmClear(null);
+    clearQueue.mutate(scope, {
+      onSuccess: (data) => {
+        setDismissedToApply(new Set());
+        addToast({ message: `Removed ${data.removed} queue item(s).`, kind: "success" });
+      },
+      onError: () => addToast({ message: "Failed to clear the queue.", kind: "error" }),
+    });
+  };
+
+  const handleClearErrorLog = () => {
+    setConfirmClearErrors(false);
+    clearErrorLog.mutate(undefined, {
+      onSuccess: (data) =>
+        addToast({ message: `Removed ${data.removed} error log entries.`, kind: "success" }),
+      onError: () => addToast({ message: "Failed to clear the error log.", kind: "error" }),
+    });
+  };
 
   return (
     <>
@@ -27,6 +80,30 @@ export function QueueDrawer() {
           <h3>Queue</h3>
           <button type="button" onClick={() => setQueueDrawerOpen(false)}>
             Close
+          </button>
+        </div>
+
+        <div className="queue-drawer-bulk-actions">
+          <button type="button" onClick={() => setConfirmClear("finished")}>
+            Clear finished
+          </button>
+          <button type="button" onClick={() => setConfirmClear("all")}>
+            Clear all
+          </button>
+          <button
+            type="button"
+            disabled={downloadErrorLog.isPending}
+            onClick={() =>
+              downloadErrorLog.mutate(undefined, {
+                onError: () =>
+                  addToast({ message: "Failed to download the error log.", kind: "error" }),
+              })
+            }
+          >
+            Download error log
+          </button>
+          <button type="button" onClick={() => setConfirmClearErrors(true)}>
+            Clear error log
           </button>
         </div>
 
@@ -58,6 +135,48 @@ export function QueueDrawer() {
           ))}
         </div>
       </div>
+
+      {confirmClear && (
+        <Modal
+          title={CLEAR_SCOPE_TITLE[confirmClear]}
+          onClose={() => setConfirmClear(null)}
+        >
+          <p>{CLEAR_SCOPE_BODY[confirmClear]}</p>
+          <div className="modal-actions">
+            <button type="button" onClick={() => setConfirmClear(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={clearQueue.isPending}
+              onClick={handleClearQueue}
+            >
+              {CLEAR_SCOPE_ACTION[confirmClear]}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {confirmClearErrors && (
+        <Modal title="Clear error log?" onClose={() => setConfirmClearErrors(false)}>
+          <p>
+            This permanently deletes the recorded analysis errors. Download the log first if you
+            want to keep a copy.
+          </p>
+          <div className="modal-actions">
+            <button type="button" onClick={() => setConfirmClearErrors(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={clearErrorLog.isPending}
+              onClick={handleClearErrorLog}
+            >
+              Clear log
+            </button>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

@@ -1,5 +1,7 @@
 import re
 
+from services.location_filter import LocationOption
+
 _TOKEN_RE = re.compile(r"[^\s(]+")
 _LEADING_INT_RE = re.compile(r"^-?\d+")
 
@@ -57,8 +59,6 @@ def _company_slug_patterns(term: str) -> list[str]:
 
 
 _LOCATION_SEPARATORS = (",", "-", "/", "(", ")", ".")
-
-
 _TITLE_SEPARATORS = (",", "-", "/", "(", ")", ".", "_", "&", "+", ":", ";", "|")
 
 
@@ -69,13 +69,82 @@ def _word_boundary_text(column: str, separators: tuple[str, ...]) -> str:
     return f"(' ' || {text} || ' ')"
 
 
-def _title_word_condition(negated: bool) -> str:
+def _fts_phrase(term: str) -> str:
+    # FTS5 double-quoted strings escape an embedded quote by doubling it.
+    # Only alphanumeric terms reach this helper: unicode61 strips punctuation,
+    # so "c#" would collapse to the token "c" and match unrelated titles.
+    return f'"{term.replace(chr(34), chr(34) * 2)}"*'
+
+
+def _title_groups(raw: str | None) -> list[dict]:
+    groups: list[dict] = []
+    for token in parse_title_query(raw or ""):
+        terms = [term.lower() for term in token["terms"]]
+        groups.append(
+            {
+                "fts": [_fts_phrase(term) for term in terms if term.isalnum()],
+                "literal": [term for term in terms if not term.isalnum()],
+                "exclude": token["exclude"],
+            }
+        )
+    return groups
+
+
+def _title_match_query(groups: list[dict]) -> str | None:
+    def join(phrases: list[str]) -> str:
+        return phrases[0] if len(phrases) == 1 else "(" + " OR ".join(phrases) + ")"
+
+    # LIKE terms cannot be represented in the FTS expression; callers must
+    # fall back to the filtered row count for those queries.
+    if not groups or any(group["literal"] for group in groups):
+        return None
+
+    positive = [join(group["fts"]) for group in groups if not group["exclude"]]
+    negative = [join(group["fts"]) for group in groups if group["exclude"]]
+    if not positive:
+        return None
+    query = " AND ".join(positive)
+    if negative:
+        query = f"({query}) NOT ({' OR '.join(negative)})"
+    return query
+
+
+def _title_word_condition(negated: bool, term: str) -> str:
+    # Keep the term's own punctuation intact while still treating the other
+    # separators around it as word boundaries.
+    separators = tuple(sep for sep in _TITLE_SEPARATORS if sep not in term)
     operator = "NOT LIKE" if negated else "LIKE"
-    return f"{_word_boundary_text('title', _TITLE_SEPARATORS)} {operator} ? ESCAPE '\\'"
+    return f"{_word_boundary_text('title', separators)} {operator} ? ESCAPE '\\'"
 
 
 def _title_word_pattern(term: str) -> str:
     return f"% {_escape_like(term.lower())}%"
+
+
+def _title_condition(group: dict) -> tuple[str, list[str]]:
+    parts: list[str] = []
+    params: list[str] = []
+    if group["fts"]:
+        parts.append(_title_fts_condition(negated=group["exclude"]))
+        params.append(" OR ".join(group["fts"]))
+    for term in group["literal"]:
+        parts.append(_title_word_condition(negated=group["exclude"], term=term))
+        params.append(_title_word_pattern(term))
+    if len(parts) == 1:
+        return parts[0], params
+    joiner = " AND " if group["exclude"] else " OR "
+    return "(" + joiner.join(parts) + ")", params
+
+
+def title_fts_query(raw: str | None) -> str | None:
+    """One FTS5 MATCH expression for all title tokens, or None for
+    pure-negation queries (FTS5 has no unary NOT to anchor them)."""
+    return _title_match_query(_title_groups(raw))
+
+
+def _title_fts_condition(negated: bool) -> str:
+    operator = "NOT IN" if negated else "IN"
+    return f"rowid {operator} " "(SELECT rowid FROM catalog_jobs_fts WHERE catalog_jobs_fts MATCH ?)"
 
 
 def _location_word_condition() -> str:
@@ -88,7 +157,7 @@ def _location_word_pattern(term: str) -> str:
     return f"% {_escape_like(term.strip().lower())} %"
 
 
-def add_job_filter_conditions(
+def build_job_filter(
     title: str | None = None,
     my_location: str | None = None,
     include_remote: bool = True,
@@ -102,7 +171,12 @@ def add_job_filter_conditions(
     types: str | None = None,
     evaluated: bool = False,
     score: str | None = None,
-) -> tuple[str, list]:
+    locations: list[LocationOption] | None = None,
+    include_unspecified: bool = True,
+) -> tuple[str, list, str | None, bool]:
+    """Build the job filter once, including the title FTS expression and
+    whether title filtering is the only condition (used for the fast FTS
+    count path)."""
     conditions: list[str] = []
     params: list = []
 
@@ -114,18 +188,11 @@ def add_job_filter_conditions(
         ",".join(sources) if isinstance(sources, list) else str(sources) if sources is not None else ""
     )
 
-    if title.strip():
-        for token in parse_title_query(title):
-            terms = token["terms"]
-            if token["exclude"]:
-                conditions.append(
-                    "(" + " AND ".join(_title_word_condition(negated=True) for _ in terms) + ")"
-                )
-            else:
-                conditions.append(
-                    "(" + " OR ".join(_title_word_condition(negated=False) for _ in terms) + ")"
-                )
-            params.extend(_title_word_pattern(t) for t in terms)
+    title_groups = _title_groups(title)
+    for group in title_groups:
+        condition, group_params = _title_condition(group)
+        conditions.append(condition)
+        params.extend(group_params)
 
     # Location: match jobs near my_location OR remote jobs (if include_remote).
     # Empty my_location + include_remote -> remote only.
@@ -150,6 +217,29 @@ def add_job_filter_conditions(
         conditions.append("(" + " OR ".join(_company_slug_condition() for _ in companies) + ")")
         for c in companies:
             params.extend(_company_slug_patterns(c))
+
+    # Location tokens (ticket 03, section C): repeatable location=<token>,
+    # OR-ed together. The includeUnspecified toggle is additive -- on by
+    # default so remote-without-geo rows keep showing (existing behavior):
+    # rows with region remote_unspecified ride along with token matches and
+    # appear unfiltered; includeUnspecified=0 hides them either way.
+    if locations or not include_unspecified:
+        token_clauses: list[str] = []
+        for option in locations or []:
+            if option.country is not None:
+                token_clauses.append("country = ?")
+                params.append(option.country)
+            elif option.regions:
+                token_clauses.append("(" + " OR ".join("region = ?" for _ in option.regions) + ")")
+                params.extend(option.regions)
+        if include_unspecified:
+            token_clauses.append("region = 'remote_unspecified'")
+            conditions.append("(" + " OR ".join(token_clauses) + ")")
+        elif token_clauses:
+            conditions.append("(" + " OR ".join(token_clauses) + ")")
+        else:
+            # No tokens selected and unspecified excluded: keep everything else.
+            conditions.append("(region IS NULL OR region <> 'remote_unspecified')")
 
     if sources_str.strip():
         provider_list = [s.strip() for s in sources_str.split(",") if s.strip()]
@@ -202,4 +292,46 @@ def add_job_filter_conditions(
         conditions.append("analysis_score >= 4")
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    return where_clause, params
+    title_only = (
+        bool(title_groups)
+        and all(not group["literal"] for group in title_groups)
+        and len(conditions) == len(title_groups)
+    )
+    return where_clause, params, _title_match_query(title_groups), title_only
+
+
+def add_job_filter_conditions(
+    title: str | None = None,
+    my_location: str | None = None,
+    include_remote: bool = True,
+    company: str | None = None,
+    sources: str | list[str] | None = None,
+    days: str | int | None = None,
+    fav_companies: list[str] | None = None,
+    include: str | None = None,
+    exclude: str | None = None,
+    tiers: str | None = None,
+    types: str | None = None,
+    evaluated: bool = False,
+    score: str | None = None,
+    locations: list[LocationOption] | None = None,
+    include_unspecified: bool = True,
+) -> tuple[str, list]:
+    where, params, _fts_query, _title_only = build_job_filter(
+        title=title,
+        my_location=my_location,
+        include_remote=include_remote,
+        company=company,
+        sources=sources,
+        days=days,
+        fav_companies=fav_companies,
+        include=include,
+        exclude=exclude,
+        tiers=tiers,
+        types=types,
+        evaluated=evaluated,
+        score=score,
+        locations=locations,
+        include_unspecified=include_unspecified,
+    )
+    return where, params

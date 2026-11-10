@@ -38,15 +38,16 @@ async def write_queue(items: list[dict]) -> None:
         await _write_queue_unlocked(items)
 
 
-async def upsert_queue_item(item: dict) -> None:
+async def upsert_queue_item(item: dict, *, insert_if_missing: bool = True) -> None:
     async with _LOCK:
         items = await read_queue()
         idx = next((i for i, existing in enumerate(items) if existing.get("id") == item["id"]), None)
         if idx is not None:
             items[idx] = item
-        else:
+        elif insert_if_missing:
             items.append(item)
-        await _write_queue_unlocked(items)
+        if idx is not None or insert_if_missing:
+            await _write_queue_unlocked(items)
 
 
 async def remove_queue_item(item_id: str) -> None:
@@ -54,6 +55,22 @@ async def remove_queue_item(item_id: str) -> None:
         items = await read_queue()
         items = [i for i in items if i.get("id") != item_id]
         await _write_queue_unlocked(items)
+
+
+async def clear_queue(scope: str) -> int:
+    """Bulk clear, returns the number of removed items. scope "finished"
+    removes only done items; scope "all" removes everything except items
+    that are currently running."""
+    async with _LOCK:
+        items = await read_queue()
+        if scope == "finished":
+            kept = [i for i in items if i.get("status") != "done"]
+        else:
+            kept = [i for i in items if i.get("status") == "running"]
+        removed = len(items) - len(kept)
+        if removed:
+            await _write_queue_unlocked(kept)
+        return removed
 
 
 def run_id_from_item_id(item_id: str) -> str:

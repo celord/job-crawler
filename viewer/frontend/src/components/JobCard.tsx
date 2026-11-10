@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useBrandSearch, useMatchRun, useStartMatchRun } from "../api/hooks";
-import { companyName, formatRelativeTime, jobMode } from "../lib/jobDisplay";
+import { companyName, formatRelativeTime, jobMode, locationLabel } from "../lib/jobDisplay";
 import { useLocalStore } from "../stores/localStore";
 import { useToastStore } from "../stores/toastStore";
 import { useUiStore } from "../stores/uiStore";
@@ -55,6 +55,7 @@ export function JobCard({ job }: Props) {
   const isFavorite = favoriteCompanies.has(company);
   const isVisited = visitedJobs.has(key);
   const compensation = job.compensation;
+  const placeLabel = locationLabel(job);
   const age = formatRelativeTime(job.posted_at ?? job.first_seen_at);
 
   const handleAnalyze = () => {
@@ -87,6 +88,7 @@ export function JobCard({ job }: Props) {
           </a>
           <div className="job-card-meta">
             <span className="pill">{jobMode(job.location, job.employment_type)}</span>
+            {placeLabel && <span className="job-card-place">{placeLabel}</span>}
             {job.location && <span>{job.location}</span>}
             {age && <span className="job-card-age">{age}</span>}
             {compensation && <span className="mono">{compensation}</span>}

@@ -5,6 +5,10 @@ CATALOG_DB = os.environ.get("CATALOG_DB", "/app/state/catalog.sqlite")
 STATE_DIR = os.environ.get("STATE_DIR", str(Path(CATALOG_DB).parent))
 MATCH_RUNS_DIR = os.environ.get("MATCH_RUNS_DIR", str(Path(STATE_DIR) / "match-runs"))
 ANALYSIS_CACHE_PATH = os.environ.get("ANALYSIS_CACHE_PATH", str(Path(STATE_DIR) / "job-analysis-cache.json"))
+# JSONL error log for failed analyses; lives under STATE_DIR so it survives
+# container restarts on the shared state volume. Capped at 5 MB (rotates to
+# errors.jsonl.1) — see services/error_log.py.
+ERROR_LOG_PATH = os.environ.get("ERROR_LOG_PATH", str(Path(STATE_DIR) / "errors.jsonl"))
 
 NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "meta/llama-4-maverick-17b-128e-instruct")
 NVIDIA_ENSEMBLE_SCORERS = os.environ.get("NVIDIA_ENSEMBLE_SCORERS")
@@ -25,6 +29,11 @@ SAVED_SEARCH_ANALYZER_ENABLED = os.environ.get("SAVED_SEARCH_ANALYZER_ENABLED", 
 # Failed match runs retry automatically only when "1". Off by default so LLM calls happen on click.
 AUTO_RETRY_ENABLED = os.environ.get("AUTO_RETRY_ENABLED", "0") == "1"
 SAVED_SEARCH_ANALYZER_INTERVAL_MS = int(os.environ.get("SAVED_SEARCH_ANALYZER_INTERVAL_MS", "60000"))
+
+# Comma-separated location filter tokens (ticket 03, section B). Parsed and
+# validated at startup by services/location_filter.py; None means the default
+# set (Costa Rica, Latam, USA).
+LOCATION_FILTERS = os.environ.get("LOCATION_FILTERS")
 
 SKIP_TIERS = os.environ.get("SKIP_TIERS", "intern")
 

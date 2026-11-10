@@ -26,6 +26,18 @@
   margin-bottom: 12px;
 }
 
+.queue-drawer-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.queue-drawer-bulk-actions button {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
 .to-apply-bucket {
   border: 1px solid var(--accent-line);
   background: var(--accent-soft);
@@ -142,6 +154,36 @@
   font-size: 11px;
   color: var(--muted-2);
   margin: 6px 0 0;
+}
+
+.queue-item-error {
+  margin-top: 8px;
+}
+
+.queue-item-error-toggle {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.queue-item-error-detail {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.queue-item-error-detail button {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.queue-item-error-first-line {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .queue-item-actions {

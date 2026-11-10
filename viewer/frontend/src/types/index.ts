@@ -46,6 +46,8 @@ export interface Job {
   employment_type_canonical?: string | null;
   lat?: number | null;
   lon?: number | null;
+  region?: string | null;
+  country?: string | null;
   parsed_jd?: string | null;
   analysis: Analysis | null;
   pipelines: Record<string, PipelineEntry>;
@@ -69,6 +71,8 @@ export interface JobsFilters {
   days?: string;
   company?: string;
   sources?: string;
+  location?: string[];
+  includeUnspecified?: "0";
   page?: number;
   limit?: number;
   favCompanies?: string;
@@ -130,6 +134,15 @@ export interface MatchRunResult {
   job_id: string;
   analysis?: Analysis;
   error?: string;
+  error_type?: string;
+  http_status?: number;
+  model?: string;
+  scorer_skips?: string[];
+}
+
+export interface LocationOption {
+  token: string;
+  label: string;
 }
 
 export interface Config {
@@ -138,6 +151,7 @@ export interface Config {
   logoDevPublishableKey: string | null;
   scoreNotifyMinScore: number;
   userLocation: string | null;
+  locationOptions?: LocationOption[];
   savedSearchAnalyzerEnabled: boolean;
 }
 
@@ -173,5 +187,6 @@ export interface SavedSearch {
   location?: string;
   company?: string;
   sources?: string[];
+  locations?: string[];
   days?: string;
 }

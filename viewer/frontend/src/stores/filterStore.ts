@@ -7,6 +7,8 @@ export interface FilterState {
   days: string;
   company: string;
   sources: string[];
+  locations: string[];
+  includeUnspecified: boolean;
   tiers: string[];
   types: string[];
   score: "none" | "4plus" | "";
@@ -24,6 +26,8 @@ const DEFAULT_STATE: FilterState = {
   days: "",
   company: "",
   sources: [],
+  locations: [],
+  includeUnspecified: true,
   tiers: [],
   types: [],
   score: "",
@@ -43,6 +47,8 @@ function readFromUrl(): FilterState {
     days: params.get("days") ?? DEFAULT_STATE.days,
     company: params.get("company") ?? DEFAULT_STATE.company,
     sources: params.get("sources")?.split(",").filter(Boolean) ?? [],
+    locations: params.getAll("location").filter(Boolean),
+    includeUnspecified: params.get("includeUnspecified") !== "0",
     tiers: params.get("tiers")?.split(",").filter(Boolean) ?? [],
     types: params.get("types")?.split(",").filter(Boolean) ?? [],
     score: (params.get("score") as FilterState["score"]) ?? "",
@@ -62,6 +68,8 @@ function writeToUrl(state: FilterState): void {
   if (state.days) params.set("days", state.days);
   if (state.company) params.set("company", state.company);
   if (state.sources.length) params.set("sources", state.sources.join(","));
+  for (const token of state.locations) params.append("location", token);
+  if (!state.includeUnspecified) params.set("includeUnspecified", "0");
   if (state.tiers.length) params.set("tiers", state.tiers.join(","));
   if (state.types.length) params.set("types", state.types.join(","));
   if (state.score) params.set("score", state.score);

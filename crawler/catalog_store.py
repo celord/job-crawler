@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from geo import resolve_coords
+from location_classifier import classify_location
 from models import NormalizedJob
 from normalizers import canonicalize_employment_type, classify_tier
 from remote import is_remote_location
@@ -56,12 +57,14 @@ INSERT INTO catalog_jobs (
     provider, source_key, job_id, title, location, employment_type,
     compensation, department, office, language, updated_at, posted_at,
     job_url, fetched_at, first_seen_at, last_seen_at, seen_run_id,
-    raw_json, skill_tier, employment_type_canonical, lat, lon, is_remote
+    raw_json, skill_tier, employment_type_canonical, lat, lon, is_remote,
+    region, country
 ) VALUES (
     :provider, :source_key, :job_id, :title, :location, :employment_type,
     :compensation, :department, :office, :language, :updated_at, :posted_at,
     :job_url, :fetched_at, :first_seen_at, :last_seen_at, :seen_run_id,
-    :raw_json, :skill_tier, :employment_type_canonical, :lat, :lon, :is_remote
+    :raw_json, :skill_tier, :employment_type_canonical, :lat, :lon, :is_remote,
+    :region, :country
 )
 ON CONFLICT(provider, source_key, job_id) DO UPDATE SET
     title = excluded.title,
@@ -81,7 +84,9 @@ ON CONFLICT(provider, source_key, job_id) DO UPDATE SET
     employment_type_canonical = excluded.employment_type_canonical,
     lat = excluded.lat,
     lon = excluded.lon,
-    is_remote = excluded.is_remote
+    is_remote = excluded.is_remote,
+    region = excluded.region,
+    country = excluded.country
 """
 
 _SELECT_ALL_SQL = """
@@ -110,6 +115,8 @@ class CatalogStore:
         self._ensure_column("catalog_jobs", "lat", "REAL")
         self._ensure_column("catalog_jobs", "lon", "REAL")
         self._ensure_column("catalog_jobs", "is_remote", "INTEGER")
+        self._ensure_column("catalog_jobs", "region", "TEXT")
+        self._ensure_column("catalog_jobs", "country", "TEXT")
 
     def _ensure_column(self, table: str, column: str, definition: str) -> None:
         rows = self.db.execute(f"PRAGMA table_info({table})").fetchall()
@@ -124,6 +131,7 @@ class CatalogStore:
             for job in jobs:
                 coords = resolve_coords(job.location)
                 lat, lon = coords if coords is not None else (None, None)
+                classification = classify_location(job.location)
                 self.db.execute(
                     _UPSERT_SQL,
                     {
@@ -150,8 +158,31 @@ class CatalogStore:
                         "lat": lat,
                         "lon": lon,
                         "is_remote": is_remote_location(job.location),
+                        "region": classification.region,
+                        "country": classification.country,
                     },
                 )
+
+    def read_classification(self) -> list[dict]:
+        """Every row's key, raw location text, and current classification."""
+        cur = self.db.execute(
+            "SELECT provider, source_key, job_id, location, region, country FROM catalog_jobs"
+        )
+        columns = [description[0] for description in cur.description]
+        return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+    def update_classification(self, updates: list[tuple[str, str, str, str | None, str | None]]) -> None:
+        """Set (provider, source_key, job_id) rows' region/country, touching
+        no other columns. Used by the one-off backfill script."""
+        with self.db:
+            self.db.executemany(
+                "UPDATE catalog_jobs SET region = ?, country = ? "
+                "WHERE provider = ? AND source_key = ? AND job_id = ?",
+                [
+                    (region, country, provider, source_key, job_id)
+                    for provider, source_key, job_id, region, country in updates
+                ],
+            )
 
     def finalize_run(self, run_id: str) -> None:
         with self.db:

@@ -42,3 +42,34 @@ export function scoreOutOf100(score5: number | null | undefined): number | null 
   if (score5 === null || score5 === undefined || Number.isNaN(score5)) return null;
   return Math.round(score5 * 20);
 }
+
+const REGION_LABELS: Record<string, string> = {
+  north_america: "North America",
+  latam: "Latam",
+  europe: "Europe",
+  asia_pacific: "Asia Pacific",
+  middle_east_africa: "Middle East & Africa",
+  global: "Global",
+};
+
+const countryNames = new Intl.DisplayNames("en", { type: "region" });
+
+export function locationLabel(job: {
+  region?: string | null;
+  country?: string | null;
+  location?: string | null;
+  employment_type?: string | null;
+}): string | null {
+  if (job.region === "remote_unspecified") return "Remote (location not specified)";
+  let place: string | undefined;
+  if (job.country) {
+    try {
+      place = countryNames.of(job.country);
+    } catch {
+      place = job.country;
+    }
+  }
+  place ??= job.region ? REGION_LABELS[job.region] : undefined;
+  if (!place) return null;
+  return jobMode(job.location, job.employment_type) === "Remote" ? `${place} · Remote` : place;
+}

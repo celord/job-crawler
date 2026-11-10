@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "./client";
 import { useUiStore } from "../stores/uiStore";
@@ -23,10 +23,12 @@ function parseJobKey(key: string): { provider: string; source_key: string; job_i
 export function useJobs(filters: JobsFilters) {
   return useQuery({
     queryKey: ["jobs", filters],
-    queryFn: async () => {
-      const { data } = await api.get<JobsResponse>("/jobs", { params: filters });
+    queryFn: async ({ signal }) => {
+      const { data } = await api.get<JobsResponse>("/jobs", { params: filters, signal });
       return data;
     },
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
   });
 }
 
@@ -87,6 +89,8 @@ export function useStartMatchRun() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs-search"] });
     },
   });
 }
@@ -109,6 +113,8 @@ export function useStartMatchRunWithJD() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs-search"] });
     },
   });
 }
@@ -203,6 +209,47 @@ export function useDeleteQueueItem() {
       if (context?.previous) queryClient.setQueryData(["queue"], context.previous);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["queue"] }),
+  });
+}
+
+export function useClearQueue() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (scope: "finished" | "all") => {
+      const { data } = await api.post<{ ok: boolean; removed: number }>("/queue/clear", { scope });
+      return data;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["queue"] }),
+  });
+}
+
+export function useDownloadErrorLog() {
+  return useMutation({
+    mutationFn: async () => {
+      const response = await api.get<Blob>("/queue/errors", { responseType: "blob" });
+      const disposition = String(response.headers?.["content-disposition"] ?? "");
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      const filename =
+        match?.[1] ?? `queue-errors-${new Date().toISOString().slice(0, 10)}.jsonl`;
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      return filename;
+    },
+  });
+}
+
+export function useClearErrorLog() {
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post<{ ok: boolean; removed: number }>("/queue/errors/clear");
+      return data;
+    },
   });
 }
 

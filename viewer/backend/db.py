@@ -84,9 +84,45 @@ async def _add_column_if_missing(column: str, sql_type: str) -> None:
             raise
 
 
+_FTS_STATEMENTS = [
+    "CREATE VIRTUAL TABLE IF NOT EXISTS catalog_jobs_fts USING fts5("
+    "title, content=catalog_jobs, content_rowid=rowid)",
+    "CREATE TRIGGER IF NOT EXISTS catalog_jobs_fts_ai AFTER INSERT ON catalog_jobs BEGIN "
+    "INSERT INTO catalog_jobs_fts(rowid, title) VALUES (new.rowid, new.title); END",
+    "CREATE TRIGGER IF NOT EXISTS catalog_jobs_fts_ad AFTER DELETE ON catalog_jobs BEGIN "
+    "INSERT INTO catalog_jobs_fts(catalog_jobs_fts, rowid, title) "
+    "VALUES ('delete', old.rowid, old.title); END",
+    "CREATE TRIGGER IF NOT EXISTS catalog_jobs_fts_au AFTER UPDATE OF title ON catalog_jobs "
+    "WHEN old.title IS NOT new.title BEGIN "
+    "INSERT INTO catalog_jobs_fts(catalog_jobs_fts, rowid, title) "
+    "VALUES ('delete', old.rowid, old.title); "
+    "INSERT INTO catalog_jobs_fts(rowid, title) VALUES (new.rowid, new.title); END",
+]
+
+
+async def _fts_needs_rebuild() -> bool:
+    row = await fetchone(
+        "SELECT (SELECT COUNT(*) FROM catalog_jobs_fts_docsize) AS indexed, "
+        "(SELECT COUNT(*) FROM catalog_jobs) AS catalog"
+    )
+    return bool(row and row["indexed"] != row["catalog"])
+
+
+async def _rebuild_fts() -> None:
+    # FTS5 rebuilds the external-content index in one implicit transaction.
+    # Chunked inserts commit partial index states, which readers (and the
+    # delete/update triggers) can observe as a corrupt index.
+    await execute("INSERT INTO catalog_jobs_fts(catalog_jobs_fts) VALUES('rebuild')")
+
+
 async def run_migrations() -> None:
     await _add_column_if_missing("analysis_score", "REAL")
     await _add_column_if_missing("parsed_jd", "TEXT")
+    # region/country are crawler-written columns (ticket 03); added here too
+    # so an older catalog that has not been recrawled/backfilled since the
+    # crawler change does not 500 every location-filtered query.
+    await _add_column_if_missing("region", "TEXT")
+    await _add_column_if_missing("country", "TEXT")
     await execute(
         "CREATE TABLE IF NOT EXISTS job_analyses ("
         "job_key TEXT NOT NULL, "
@@ -96,3 +132,13 @@ async def run_migrations() -> None:
         "run_id TEXT NOT NULL, "
         "PRIMARY KEY (job_key, pipeline))"
     )
+    # CREATE TRIGGER IF NOT EXISTS would keep an older trigger that lacks the
+    # WHEN guard, so replace the update trigger explicitly.
+    await execute("DROP TRIGGER IF EXISTS catalog_jobs_fts_au")
+    for statement in _FTS_STATEMENTS:
+        await execute(statement)
+    # The catalog may predate the FTS index (or have been left partially
+    # indexed by an interrupted rebuild / older viewer), so rebuild whenever
+    # the index row count differs from the catalog row count.
+    if await _fts_needs_rebuild():
+        await _rebuild_fts()

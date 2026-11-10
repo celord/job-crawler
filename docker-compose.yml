@@ -47,6 +47,7 @@ services:
       - ./crawler/state:/app/state
     environment:
       CATALOG_DB: /app/state/catalog.sqlite
+      LOCATION_FILTERS: ${LOCATION_FILTERS:-Costa Rica,Latam,USA}
       # The production image copies frontend/dist to ./static (WORKDIR
       # /app), not to a frontend/ sibling of backend/ — config.py's
       # STATIC_DIR/SAVED_SEARCHES_PATH defaults assume the dev-time
