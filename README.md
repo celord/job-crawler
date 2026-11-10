@@ -189,11 +189,25 @@ Set in `.env` (gitignored). The values that matter most:
 |---|---|
 | `NVIDIA_API_KEY` | Required for any LLM scoring. Keep it out of Git. |
 | `NVIDIA_MODEL` | Quick-mode scorer. |
+| `LOCATION_FILTERS` | Comma-separated Location filter options shown in the viewer. Default `Costa Rica,Latam,USA`. Each token is a country name or ISO code, or a region (`Latam`, `EMEA`, `APAC`, `North America`). An unknown token stops the viewer at startup. |
 | `NVIDIA_ENSEMBLE_SCORERS` | Comma-separated scorer models for ensemble mode. |
 | `NVIDIA_ENSEMBLE_SYNTHESIZER` | Model that merges scorer results. |
 | `SAVED_SEARCH_ANALYZER_ENABLED` | `1` to run the background analyzer. Default off. |
 | `AUTO_RETRY_ENABLED` | `1` to retry failed runs automatically. Default off. |
 | `CAREER_OPS_DIR` | Local profile folder under `matcher/`. |
+
+### Locations
+
+The crawler labels each job with a `region` (continent) and a `country` (ISO code) from its location text. Remote jobs keep their geography when the text names one, for example "Remote - Costa Rica". Remote jobs with no geographic hint are `remote_unspecified` and still appear in the feed unless you turn off "Include remote/unspecified". iCIMS rows stay `unknown` because iCIMS sitemaps carry no location data.
+
+The viewer's Location filter shows the options in `LOCATION_FILTERS`. To classify rows that predate this change, run the backfill once against a copy of the catalog first:
+
+```bash
+docker run --rm -v "$(pwd)/crawler:/app" -w /app -v "$(pwd)/crawler/state:/app/state" \
+  job-crawler-crawler-dev python backfill_region_country.py --catalog-db /app/state/catalog.sqlite
+```
+
+The backfill only updates `region` and `country`, and re-running it does nothing new.
 
 Retired NIM models return `410 Gone`, and some models are listed but cannot be called. Test a model with a one-token request before you put it in `.env`. The matcher's LLM read timeout is 180 seconds.
 
