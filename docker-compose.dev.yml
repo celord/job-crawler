@@ -1,0 +1,65 @@
+# Dev override: run the stack from source with live reload, no image rebuild per edit.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Dev UI: http://localhost:5173  (Vite; proxies /api to the viewer backend)
+# Viewer API directly: http://localhost:3000   Matcher: http://localhost:8001
+#
+# Crawler on demand:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm crawler
+#
+# Rebuild production images only when code is ready (docker-compose.yml alone).
+
+services:
+  viewer:
+    # Distinct tag so dev builds never overwrite the production image.
+    image: job-crawler-viewer-dev
+    build:
+      context: ./viewer/backend
+      dockerfile: Dockerfile.dev
+    depends_on:
+      - matcher
+    volumes:
+      - ./viewer/backend:/app
+      - ./crawler/state:/app/state
+      - ./viewer/frontend/public:/app/static:ro
+    environment:
+      CATALOG_DB: /app/state/catalog.sqlite
+      STATIC_DIR: /app/static
+      SAVED_SEARCHES_PATH: /app/static/saved-searches.json
+      MATCHER_SERVICE_URL: http://matcher:8001
+      LOGO_DEV_PUBLISHABLE_KEY: ${LOGO_DEV_PUBLISHABLE_KEY:-}
+      LOGO_DEV_SECRET_KEY: ${LOGO_DEV_SECRET_KEY:-}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      SCORE_NOTIFY_MIN_SCORE: ${SCORE_NOTIFY_MIN_SCORE:-4}
+      NVIDIA_ENSEMBLE_SCORERS: ${NVIDIA_ENSEMBLE_SCORERS:-}
+      NVIDIA_ENSEMBLE_SYNTHESIZER: ${NVIDIA_ENSEMBLE_SYNTHESIZER:-}
+
+  viewer-frontend:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_BACKEND_URL: http://viewer:3000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./viewer/frontend:/app
+      - viewer_frontend_node_modules:/app/node_modules
+    depends_on:
+      - viewer
+
+  matcher:
+    image: job-crawler-matcher-dev
+    build:
+      context: ./matcher
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./matcher:/app
+
+  crawler:
+    volumes:
+      - ./crawler:/app
+
+volumes:
+  viewer_frontend_node_modules:
