@@ -43,6 +43,16 @@ async def test_upsert_replaces_existing_item_in_place():
     assert items[0]["status"] == "done"
 
 
+async def test_cleared_todo_item_is_not_reinserted_by_background_update():
+    item = {"id": "run:job", "status": "todo"}
+    await queue_store.upsert_queue_item(item)
+    assert await queue_store.clear_queue("all") == 1
+
+    await queue_store.upsert_queue_item({**item, "status": "running"}, insert_if_missing=False)
+
+    assert await queue_store.read_queue() == []
+
+
 async def test_remove_queue_item():
     await queue_store.upsert_queue_item({"id": "a"})
     await queue_store.upsert_queue_item({"id": "b"})

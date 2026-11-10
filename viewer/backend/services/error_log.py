@@ -112,7 +112,16 @@ async def read_errors(since: str | None = None, limit: int | None = None) -> lis
             entries.append(parsed)
 
     if since is not None:
-        entries = [e for e in entries if str(e.get("timestamp") or "") >= since]
+        since_time = _parse_timestamp(since)
+        filtered = []
+        for entry in entries:
+            try:
+                timestamp = _parse_timestamp(str(entry.get("timestamp") or ""))
+            except ValueError:
+                continue
+            if timestamp >= since_time:
+                filtered.append(entry)
+        entries = filtered
     if limit is not None:
         entries = entries[-limit:]
     return entries
@@ -122,12 +131,22 @@ async def clear_errors() -> int:
     async with _LOCK:
         path = error_log_path()
         removed = 0
-        try:
-            async with aiofiles.open(path, encoding="utf-8") as f:
-                raw = await f.read()
-            removed = len([line for line in raw.splitlines() if line.strip()])
-        except OSError:
-            return 0
-        path.unlink(missing_ok=True)
-        path.with_name(f"{path.name}.1").unlink(missing_ok=True)
+        for candidate in (path, path.with_name(f"{path.name}.1")):
+            try:
+                async with aiofiles.open(candidate, encoding="utf-8") as f:
+                    raw = await f.read()
+                removed += len([line for line in raw.splitlines() if line.strip()])
+            except OSError:
+                pass
+            candidate.unlink(missing_ok=True)
         return removed
+
+
+def _parse_timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("timestamp must be an ISO timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("timestamp must include a timezone")
+    return parsed.astimezone(UTC)

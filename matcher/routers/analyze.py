@@ -101,6 +101,9 @@ def _error_row_fields(exc: Exception, model: str) -> dict:
     """Extra diagnostic fields for an error row (backward-compatible additions)."""
     fields = {"error_type": type(exc).__name__, "model": model}
     status_code = getattr(exc, "status_code", None)
+    if not isinstance(status_code, int):
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
     if isinstance(status_code, int):
         fields["http_status"] = status_code
     return fields

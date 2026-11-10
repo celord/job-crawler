@@ -58,9 +58,13 @@ async def retry_queue_item(item_id: str) -> dict:
         "error": None,
         "updated_at": _now_iso(),
     }
-    await queue_store.upsert_queue_item(item)
+    await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
-    asyncio.create_task(execute_match_run_from_input(run_id, input_lines, item.get("mode") or "claude"))
+    asyncio.create_task(
+        execute_match_run_from_input(
+            run_id, input_lines, item.get("mode") or "claude", insert_queue_items=False
+        )
+    )
 
     return item
 
@@ -82,7 +86,7 @@ async def stop_queue_item(item_id: str) -> dict:
             for s in item.get("subtasks", [])
         ],
     }
-    await queue_store.upsert_queue_item(item)
+    await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
     manifest = await read_manifest(run_id)
     if manifest is not None and manifest.get("status") == STATUS_RUNNING:
@@ -113,10 +117,14 @@ async def restart_queue_item(item_id: str) -> dict:
             for s in item.get("subtasks", [])
         ],
     }
-    await queue_store.upsert_queue_item(item)
+    await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
     input_lines = await read_input_lines(run_id)
-    asyncio.create_task(execute_match_run_from_input(run_id, input_lines, item.get("mode") or "claude"))
+    asyncio.create_task(
+        execute_match_run_from_input(
+            run_id, input_lines, item.get("mode") or "claude", insert_queue_items=False
+        )
+    )
 
     return item
 
@@ -143,8 +151,10 @@ async def clear_queue(body: ClearQueueRequest) -> dict:
 async def download_queue_errors(since: str | None = None, limit: int | None = None) -> Response:
     if since is not None:
         try:
-            datetime.fromisoformat(since.replace("Z", "+00:00"))
+            parsed_since = datetime.fromisoformat(since.replace("Z", "+00:00"))
         except ValueError:
+            raise HTTPException(status_code=400, detail="since must be an ISO timestamp")
+        if parsed_since.tzinfo is None or parsed_since.utcoffset() is None:
             raise HTTPException(status_code=400, detail="since must be an ISO timestamp")
     if limit is not None and limit < 1:
         raise HTTPException(status_code=400, detail="limit must be >= 1")

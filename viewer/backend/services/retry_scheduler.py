@@ -63,7 +63,9 @@ async def _retry_match_run(item: dict) -> None:
         logger.error("retry_scheduler: no input file for run %s, skipping", run_id)
         return
     # On success execute_match_run_from_input updates the queue item to "done" itself.
-    await execute_match_run_from_input(run_id, input_lines, item.get("mode") or "claude")
+    await execute_match_run_from_input(
+        run_id, input_lines, item.get("mode") or "claude", insert_queue_items=False
+    )
 
 
 async def _tick() -> None:
@@ -78,7 +80,7 @@ async def _tick() -> None:
     for item in due:
         # Mark as running before dispatch so a slow tick can't double-fire on the same item.
         item = {**item, "status": "running", "updated_at": _now_iso()}
-        await queue_store.upsert_queue_item(item)
+        await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
         subtasks = item.get("subtasks") or []
         is_discord_only = len(subtasks) == 1 and subtasks[0].get("id") == "discord"

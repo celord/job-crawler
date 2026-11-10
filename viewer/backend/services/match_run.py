@@ -437,7 +437,7 @@ async def run_scorer_phase(run_id: str, mode: str, queue_items: list[dict]) -> l
             for s in item["subtasks"]
         ]
         item["updated_at"] = running_at
-        await queue_store.upsert_queue_item(item)
+        await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
     await append_match_run_log(run_id, f"[score] start | mode={mode} count={len(jobs)}")
     try:
@@ -517,13 +517,20 @@ async def run_scorer_phase(run_id: str, mode: str, queue_items: list[dict]) -> l
             for s in item["subtasks"]
         ]
         item["updated_at"] = finished_at
-        await queue_store.upsert_queue_item(item)
+        await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
     await append_match_run_log(run_id, f"[score] done | ok={ok_count} total={len(results)}")
     return results
 
 
-async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list[dict], mode: str) -> None:
+async def _run_scored_pipeline(
+    run_id: str,
+    manifest: dict,
+    jobs_for_queue: list[dict],
+    mode: str,
+    *,
+    insert_queue_items: bool = True,
+) -> None:
     now = _now_iso()
     existing_by_id = {i["id"]: i for i in await queue_store.read_queue()}
     queue_items: list[dict] = []
@@ -534,7 +541,9 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
         item = _new_queue_item(run_id, job, mode, existing_by_id.get(f"{run_id}:{job_key}"), now)
         queue_items.append(item)
 
-    await asyncio.gather(*(queue_store.upsert_queue_item(i) for i in queue_items))
+    await asyncio.gather(
+        *(queue_store.upsert_queue_item(i, insert_if_missing=insert_queue_items) for i in queue_items)
+    )
 
     failure_stage = "score"
     try:
@@ -551,7 +560,7 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
                 for s in item["subtasks"]
             ]
             item["updated_at"] = discord_started
-            await queue_store.upsert_queue_item(item)
+            await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
         await persist_run_results(results, run_id, notify_discord_for_score)
 
@@ -574,7 +583,7 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
                 for s in item["subtasks"]
             ]
             item["updated_at"] = finished_at
-            await queue_store.upsert_queue_item(item)
+            await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
         manifest = {
             **manifest,
@@ -610,7 +619,7 @@ async def _run_scored_pipeline(run_id: str, manifest: dict, jobs_for_queue: list
                 for s in item["subtasks"]
             ]
             item["updated_at"] = _now_iso()
-            await queue_store.upsert_queue_item(item)
+            await queue_store.upsert_queue_item(item, insert_if_missing=False)
 
         manifest = {**manifest, "status": STATUS_FAILED, "error": err_msg, "updated_at": _now_iso()}
         await write_manifest(run_id, manifest)
@@ -644,7 +653,13 @@ async def execute_match_run(run_id: str, jobs: list[dict], mode: str) -> None:
         active_run_ids.discard(run_id)
 
 
-async def execute_match_run_from_input(run_id: str, input_lines: list[str], mode: str) -> None:
+async def execute_match_run_from_input(
+    run_id: str,
+    input_lines: list[str],
+    mode: str,
+    *,
+    insert_queue_items: bool = True,
+) -> None:
     manifest = await read_manifest(run_id)
     if manifest is None:
         return
@@ -664,7 +679,9 @@ async def execute_match_run_from_input(run_id: str, input_lines: list[str], mode
         manifest = {**manifest, "status": STATUS_RUNNING, "updated_at": _now_iso()}
         await write_manifest(run_id, manifest)
 
-        await _run_scored_pipeline(run_id, manifest, jobs_for_queue, mode)
+        await _run_scored_pipeline(
+            run_id, manifest, jobs_for_queue, mode, insert_queue_items=insert_queue_items
+        )
     except Exception as exc:
         await _fail_manifest(run_id, exc)
     finally:

@@ -75,6 +75,35 @@ def test_analyze_quick_error_row_includes_error_type_http_status_and_model(clien
     assert row["model"] == analyze.settings.nvidia_model
 
 
+def test_analyze_quick_http_status_error_uses_response_status(client, monkeypatch):
+    import httpx
+
+    async def fake_score(job, profile_data, model):
+        request = httpx.Request("POST", "https://matcher.test")
+        response = httpx.Response(401, request=request)
+        raise httpx.HTTPStatusError("unauthorized", request=request, response=response)
+
+    monkeypatch.setattr(analyze, "score_job_quick", fake_score)
+
+    resp = client.post("/analyze/quick", json={"jobs": [{"job_id": "1"}]})
+
+    assert resp.json()["results"][0]["http_status"] == 401
+
+
+def test_analyze_ensemble_retryable_synthesizer_error_reports_status(client, monkeypatch):
+    from lib.llm_client import RetryableHttpError
+    from services.ensemble_scorer import _synthesizer_error
+
+    async def fake_score(job, profile_data):
+        raise _synthesizer_error(RetryableHttpError(429))
+
+    monkeypatch.setattr(analyze, "score_job_ensemble", fake_score)
+
+    resp = client.post("/analyze/ensemble", json={"jobs": [{"job_id": "1"}]})
+
+    assert resp.json()["results"][0]["http_status"] == 429
+
+
 def test_analyze_quick_echoes_supplied_run_id(client, monkeypatch):
     async def fake_score(job, profile_data, model):
         return {"score": 80, "pipeline": "maverick"}

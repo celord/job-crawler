@@ -127,6 +127,30 @@ async def test_read_errors_filters_by_since_and_limits(isolated_env):
 
 
 @pytest.mark.asyncio
+async def test_read_errors_since_compares_timestamp_instants(isolated_env):
+    path = isolated_env["state_dir"] / "errors.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps({"timestamp": timestamp, "message": message})
+            for timestamp, message in [
+                ("2026-11-09T10:00:00.500000Z", "same second"),
+                ("2026-11-09T09:59:59Z", "before"),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    z_results = await error_log.read_errors(since="2026-11-09T10:00:00Z")
+    offset_results = await error_log.read_errors(since="2026-11-09T10:00:00+00:00")
+
+    assert (
+        z_results
+        == offset_results
+        == [{"timestamp": "2026-11-09T10:00:00.500000Z", "message": "same second"}]
+    )
+
+
+@pytest.mark.asyncio
 async def test_read_errors_skips_corrupt_lines(isolated_env):
     path = isolated_env["state_dir"] / "errors.jsonl"
     path.write_text('{"message": "ok"}\nnot json\n', encoding="utf-8")
@@ -153,10 +177,10 @@ async def test_log_rotates_to_dot_one_at_cap(isolated_env, monkeypatch):
 async def test_clear_errors_removes_current_and_rotated_files(isolated_env):
     await error_log.append_error(_entry())
     rotated = isolated_env["state_dir"] / "errors.jsonl.1"
-    rotated.write_text("old\n", encoding="utf-8")
+    rotated.write_text("old\nolder\n", encoding="utf-8")
 
     removed = await error_log.clear_errors()
 
-    assert removed == 1
+    assert removed == 3
     assert await error_log.read_errors() == []
     assert not rotated.exists()

@@ -38,15 +38,16 @@ async def write_queue(items: list[dict]) -> None:
         await _write_queue_unlocked(items)
 
 
-async def upsert_queue_item(item: dict) -> None:
+async def upsert_queue_item(item: dict, *, insert_if_missing: bool = True) -> None:
     async with _LOCK:
         items = await read_queue()
         idx = next((i for i, existing in enumerate(items) if existing.get("id") == item["id"]), None)
         if idx is not None:
             items[idx] = item
-        else:
+        elif insert_if_missing:
             items.append(item)
-        await _write_queue_unlocked(items)
+        if idx is not None or insert_if_missing:
+            await _write_queue_unlocked(items)
 
 
 async def remove_queue_item(item_id: str) -> None:

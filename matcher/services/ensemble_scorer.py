@@ -330,6 +330,16 @@ def _job_id_and_label(job: dict) -> tuple[str, str]:
     return job_id, label
 
 
+def _synthesizer_error(exc: Exception) -> RuntimeError:
+    error = RuntimeError(f"ensemble synthesizer failed: {exc}")
+    status_code = getattr(exc, "status_code", None)
+    if not isinstance(status_code, int):
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if isinstance(status_code, int):
+        error.status_code = status_code
+    return error
+
+
 async def score_job_ensemble(job: dict, profile_data: dict) -> dict:
     jd_text = str(job.get("jd_text") or "").strip() or synthesize_jd_text(job)
     job_id, _job_label = _job_id_and_label(job)
@@ -405,22 +415,25 @@ async def score_job_ensemble(job: dict, profile_data: dict) -> dict:
 
         synth_retries = 3
         for attempt in range(1, synth_retries + 1):
-            synth_raw = await llm_client.chat_completions(
-                model=settings.nvidia_ensemble_synthesizer,
-                messages=[
-                    {"role": "system", "content": synth_system},
-                    {"role": "user", "content": synth_user},
-                ],
-                temperature=0.1,
-                max_tokens=2000,
-            )
+            try:
+                synth_raw = await llm_client.chat_completions(
+                    model=settings.nvidia_ensemble_synthesizer,
+                    messages=[
+                        {"role": "system", "content": synth_system},
+                        {"role": "user", "content": synth_user},
+                    ],
+                    temperature=0.1,
+                    max_tokens=2000,
+                )
+            except Exception as exc:
+                raise _synthesizer_error(exc) from exc
             try:
                 synthesis = strip_json(synth_raw)
                 synth_cache_path.write_text(json.dumps(synthesis, ensure_ascii=False), encoding="utf-8")
                 break
             except Exception as exc:
                 if attempt == synth_retries:
-                    raise RuntimeError(f"ensemble synthesizer failed: {exc}") from exc
+                    raise _synthesizer_error(exc) from exc
 
     scorecard = synthesis.get("scorecard", {})
     score_100 = score_to_100(scorecard)

@@ -283,6 +283,41 @@ async def test_score_job_ensemble_wraps_synthesizer_failure(monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_score_job_ensemble_preserves_synthesizer_http_status(monkeypatch, tmp_path, profile_data):
+    monkeypatch.setattr(
+        ensemble_scorer,
+        "settings",
+        dataclasses.replace(
+            settings,
+            state_dir=str(tmp_path),
+            nvidia_ensemble_scorers=["meta/llama-4-maverick-17b-128e-instruct"],
+            nvidia_ensemble_synthesizer="nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        ),
+    )
+
+    llm_client.start_client()
+    try:
+
+        async def fake_chat_completions(*, model, **kwargs):
+            if "nemotron" in model:
+                raise llm_client.RetryableHttpError(429)
+            import json as _json
+
+            return _json.dumps({"scorecard": {}, "blockers": [], "verdict": "yes"})
+
+        monkeypatch.setattr(llm_client, "chat_completions", fake_chat_completions)
+
+        with pytest.raises(RuntimeError, match="ensemble synthesizer failed") as exc_info:
+            await ensemble_scorer.score_job_ensemble(
+                {"job_id": "655", "title": "PM", "company": "Acme"}, profile_data
+            )
+
+        assert exc_info.value.status_code == 429
+    finally:
+        await llm_client.stop_client()
+
+
+@pytest.mark.asyncio
 async def test_score_job_ensemble_raises_when_all_scorers_fail(monkeypatch, tmp_path, profile_data):
     monkeypatch.setattr(
         ensemble_scorer,
