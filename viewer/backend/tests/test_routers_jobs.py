@@ -159,3 +159,118 @@ def test_get_trends_reads_last_30_lines(app_client, migrated_env):
     assert len(body) == 30
     assert body[0]["n"] == 5
     assert body[-1]["n"] == 34
+
+
+# --- Location filter (ticket 03, section C) ----------------------------------
+
+
+def _seed_location_rows(catalog_db):
+    insert_job(
+        catalog_db,
+        provider="gh",
+        source_key="acme",
+        job_id="cr",
+        title="CR remote",
+        location="Remote - Costa Rica",
+        is_remote=1,
+        region="latam",
+        country="CR",
+    )
+    insert_job(
+        catalog_db,
+        provider="lever",
+        source_key="acme",
+        job_id="cr2",
+        title="CR onsite",
+        location="San José, Costa Rica",
+        is_remote=0,
+        region="latam",
+        country="CR",
+    )
+    insert_job(
+        catalog_db,
+        provider="gh",
+        source_key="acme",
+        job_id="us",
+        title="US remote",
+        location="Remote - US",
+        is_remote=1,
+        region="north_america",
+        country="US",
+    )
+    insert_job(
+        catalog_db,
+        provider="gh",
+        source_key="acme",
+        job_id="unspec",
+        title="Just remote",
+        location="Remote",
+        is_remote=1,
+        region="remote_unspecified",
+        country=None,
+    )
+
+
+def _job_ids(response) -> set[str]:
+    return {job["job_id"] for job in response.json()["jobs"]}
+
+
+def test_remote_cr_row_under_costa_rica_and_latam_not_usa(app_client, migrated_env):
+    _seed_location_rows(migrated_env["catalog_db"])
+
+    costa_rica = app_client.get("/api/jobs", params={"location": "Costa Rica", "includeUnspecified": "0"})
+    assert _job_ids(costa_rica) == {"cr", "cr2"}
+    latam = app_client.get("/api/jobs", params={"location": "Latam", "includeUnspecified": "0"})
+    assert _job_ids(latam) == {"cr", "cr2"}
+    usa = app_client.get("/api/jobs", params={"location": "USA", "includeUnspecified": "0"})
+    assert "cr" not in _job_ids(usa)
+
+
+def test_repeatable_location_tokens_are_ored(app_client, migrated_env):
+    _seed_location_rows(migrated_env["catalog_db"])
+    r = app_client.get(
+        "/api/jobs",
+        params=[("location", "Costa Rica"), ("location", "USA"), ("includeUnspecified", "0")],
+    )
+    assert _job_ids(r) == {"cr", "cr2", "us"}
+
+
+def test_remote_unspecified_rows_follow_include_unspecified(app_client, migrated_env):
+    _seed_location_rows(migrated_env["catalog_db"])
+
+    # Default (includeUnspecified=1), no location filter: everything shows.
+    assert _job_ids(app_client.get("/api/jobs")) == {"cr", "cr2", "us", "unspec"}
+
+    # Default includeUnspecified=1 with a location filter: unspecified rows
+    # ride along (the toggle is additive), token matches still apply.
+    assert _job_ids(app_client.get("/api/jobs", params={"location": "Costa Rica"})) == {"cr", "cr2", "unspec"}
+
+    # includeUnspecified=0 drops them with and without location tokens.
+    no_unspec = app_client.get("/api/jobs", params={"includeUnspecified": "0"})
+    assert _job_ids(no_unspec) == {"cr", "cr2", "us"}
+    usa_only = app_client.get("/api/jobs", params={"location": "USA", "includeUnspecified": "0"})
+    assert _job_ids(usa_only) == {"us"}
+
+
+def test_location_filter_combines_with_sources_filter(app_client, migrated_env):
+    _seed_location_rows(migrated_env["catalog_db"])
+    r = app_client.get(
+        "/api/jobs",
+        params=[("location", "Costa Rica"), ("sources", "lever"), ("includeUnspecified", "0")],
+    )
+    assert _job_ids(r) == {"cr2"}
+
+
+def test_invalid_location_token_returns_400_naming_token(app_client, migrated_env):
+    _seed_location_rows(migrated_env["catalog_db"])
+    r = app_client.get("/api/jobs", params={"location": "BadToken"})
+    assert r.status_code == 400
+    assert "BadToken" in r.json()["detail"]
+
+
+def test_jobs_response_includes_region_and_country(app_client, migrated_env):
+    _seed_location_rows(migrated_env["catalog_db"])
+    r = app_client.get("/api/jobs", params={"location": "Costa Rica", "includeUnspecified": "0"})
+    job = next(j for j in r.json()["jobs"] if j["job_id"] == "cr")
+    assert job["region"] == "latam"
+    assert job["country"] == "CR"

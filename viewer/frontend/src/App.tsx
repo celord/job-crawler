@@ -30,6 +30,8 @@ function App() {
     days: filters.days || undefined,
     company: filters.company,
     sources: filters.sources.join(",") || undefined,
+    location: filters.locations.length ? filters.locations : undefined,
+    includeUnspecified: filters.includeUnspecified ? undefined : "0",
     tiers: filters.tiers.join(",") || undefined,
     types: filters.types.join(",") || undefined,
     score: filters.score || undefined,

@@ -118,6 +118,11 @@ async def _rebuild_fts() -> None:
 async def run_migrations() -> None:
     await _add_column_if_missing("analysis_score", "REAL")
     await _add_column_if_missing("parsed_jd", "TEXT")
+    # region/country are crawler-written columns (ticket 03); added here too
+    # so an older catalog that has not been recrawled/backfilled since the
+    # crawler change does not 500 every location-filtered query.
+    await _add_column_if_missing("region", "TEXT")
+    await _add_column_if_missing("country", "TEXT")
     await execute(
         "CREATE TABLE IF NOT EXISTS job_analyses ("
         "job_key TEXT NOT NULL, "

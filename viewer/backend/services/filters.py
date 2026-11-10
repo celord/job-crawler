@@ -1,5 +1,7 @@
 import re
 
+from services.location_filter import LocationOption
+
 _TOKEN_RE = re.compile(r"[^\s(]+")
 _LEADING_INT_RE = re.compile(r"^-?\d+")
 
@@ -169,6 +171,8 @@ def build_job_filter(
     types: str | None = None,
     evaluated: bool = False,
     score: str | None = None,
+    locations: list[LocationOption] | None = None,
+    include_unspecified: bool = True,
 ) -> tuple[str, list, str | None, bool]:
     """Build the job filter once, including the title FTS expression and
     whether title filtering is the only condition (used for the fast FTS
@@ -213,6 +217,29 @@ def build_job_filter(
         conditions.append("(" + " OR ".join(_company_slug_condition() for _ in companies) + ")")
         for c in companies:
             params.extend(_company_slug_patterns(c))
+
+    # Location tokens (ticket 03, section C): repeatable location=<token>,
+    # OR-ed together. The includeUnspecified toggle is additive -- on by
+    # default so remote-without-geo rows keep showing (existing behavior):
+    # rows with region remote_unspecified ride along with token matches and
+    # appear unfiltered; includeUnspecified=0 hides them either way.
+    if locations or not include_unspecified:
+        token_clauses: list[str] = []
+        for option in locations or []:
+            if option.country is not None:
+                token_clauses.append("country = ?")
+                params.append(option.country)
+            elif option.regions:
+                token_clauses.append("(" + " OR ".join("region = ?" for _ in option.regions) + ")")
+                params.extend(option.regions)
+        if include_unspecified:
+            token_clauses.append("region = 'remote_unspecified'")
+            conditions.append("(" + " OR ".join(token_clauses) + ")")
+        elif token_clauses:
+            conditions.append("(" + " OR ".join(token_clauses) + ")")
+        else:
+            # No tokens selected and unspecified excluded: keep everything else.
+            conditions.append("(region IS NULL OR region <> 'remote_unspecified')")
 
     if sources_str.strip():
         provider_list = [s.strip() for s in sources_str.split(",") if s.strip()]
@@ -287,6 +314,8 @@ def add_job_filter_conditions(
     types: str | None = None,
     evaluated: bool = False,
     score: str | None = None,
+    locations: list[LocationOption] | None = None,
+    include_unspecified: bool = True,
 ) -> tuple[str, list]:
     where, params, _fts_query, _title_only = build_job_filter(
         title=title,
@@ -302,5 +331,7 @@ def add_job_filter_conditions(
         types=types,
         evaluated=evaluated,
         score=score,
+        locations=locations,
+        include_unspecified=include_unspecified,
     )
     return where, params

@@ -1,3 +1,5 @@
+import sqlite3
+
 from catalog_store import CatalogStore
 from models import NormalizedJob
 
@@ -185,4 +187,92 @@ def test_is_remote_does_not_match_inside_words(tmp_path):
     store = CatalogStore(str(tmp_path / "catalog.sqlite"))
     store.record_jobs([_job(location="Remotely hosted, Berlin")], "run1")
     assert store.db.execute("SELECT is_remote FROM catalog_jobs").fetchone()[0] == 0
+    store.close()
+
+
+def test_upsert_records_region_and_country(tmp_path):
+    store = CatalogStore(str(tmp_path / "catalog.sqlite"))
+    store.record_jobs([_job(job_id="1", location="Remote - Costa Rica")], "run1")
+    store.record_jobs([_job(job_id="2", location="Miami, FL")], "run1")
+    rows = store.db.execute(
+        "SELECT job_id, region, country, is_remote FROM catalog_jobs ORDER BY job_id"
+    ).fetchall()
+    assert rows == [("1", "latam", "CR", 1), ("2", "north_america", "US", 0)]
+    store.close()
+
+
+def test_migration_adds_region_country_to_existing_catalog_without_data_loss(tmp_path):
+    db_path = str(tmp_path / "catalog.sqlite")
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE catalog_jobs (
+            provider TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            title TEXT,
+            location TEXT,
+            fetched_at TEXT NOT NULL,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            seen_run_id TEXT NOT NULL,
+            raw_json TEXT NOT NULL DEFAULT 'null',
+            is_remote INTEGER,
+            PRIMARY KEY (provider, source_key, job_id)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO catalog_jobs (provider, source_key, job_id, title, location, fetched_at,"
+        " first_seen_at, last_seen_at, seen_run_id, is_remote)"
+        " VALUES ('greenhouse', 'acme', '42', 'Old Title', 'Remote - Costa Rica',"
+        " '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'run0', 1)"
+    )
+    conn.commit()
+    conn.close()
+
+    store = CatalogStore(db_path)  # migration runs on the existing catalog
+    cols = {row[1] for row in store.db.execute("PRAGMA table_info(catalog_jobs)").fetchall()}
+    assert {"region", "country"} <= cols
+    row = store.db.execute(
+        "SELECT title, location, seen_run_id, region, country FROM catalog_jobs"
+    ).fetchone()
+    assert row[:3] == ("Old Title", "Remote - Costa Rica", "run0")  # data preserved
+    assert row[3] is None and row[4] is None  # new columns start NULL until backfill
+    store.close()
+
+
+def test_read_classification_returns_keys_and_locations(tmp_path):
+    store = CatalogStore(str(tmp_path / "catalog.sqlite"))
+    store.record_jobs([_job(job_id="1", location="Remote - Costa Rica")], "run1")
+    rows = store.read_classification()
+    assert rows == [
+        {
+            "provider": "greenhouse",
+            "source_key": "acme",
+            "job_id": "1",
+            "location": "Remote - Costa Rica",
+            "region": "latam",
+            "country": "CR",
+        }
+    ]
+    store.close()
+
+
+def test_update_classification_touches_only_region_and_country(tmp_path):
+    store = CatalogStore(str(tmp_path / "catalog.sqlite"))
+    store.record_jobs([_job(job_id="1", location="Remote - Costa Rica")], "run1")
+
+    store.update_classification([("greenhouse", "acme", "1", "remote_unspecified", None)])
+
+    row = store.db.execute("SELECT title, location, is_remote, region, country FROM catalog_jobs").fetchone()
+    assert row == ("Senior Backend Engineer", "Remote - Costa Rica", 1, "remote_unspecified", None)
+    store.close()
+
+
+def test_update_classification_is_a_no_op_for_empty_list(tmp_path):
+    store = CatalogStore(str(tmp_path / "catalog.sqlite"))
+    store.record_jobs([_job()], "run1")
+    store.update_classification([])
+    assert store.db.execute("SELECT COUNT(*) FROM catalog_jobs").fetchone()[0] == 1
     store.close()

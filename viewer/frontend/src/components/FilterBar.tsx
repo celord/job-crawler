@@ -1,4 +1,4 @@
-import { useSources } from "../api/hooks";
+import { useConfig } from "../api/hooks";
 import { useFilterStore } from "../stores/filterStore";
 import { DebouncedTextInput } from "./DebouncedTextInput";
 
@@ -17,7 +17,7 @@ export function FilterBar({ disabled }: Props) {
   const filters = useFilterStore();
   const setFilter = useFilterStore((s) => s.setFilter);
   const resetFilters = useFilterStore((s) => s.resetFilters);
-  const sourcesQuery = useSources();
+  const locationOptions = useConfig().data?.locationOptions ?? [];
 
   return (
     <div className="filter-bar" aria-disabled={disabled}>
@@ -48,17 +48,25 @@ export function FilterBar({ disabled }: Props) {
         />
 
         <fieldset disabled={disabled}>
-          <legend>Providers</legend>
-          {(sourcesQuery.data ?? []).map((source) => (
-            <label key={source} className="provider-item">
+          <legend>Location</legend>
+          {locationOptions.map((option) => (
+            <label key={option.token} className="provider-item">
               <input
                 type="checkbox"
-                checked={filters.sources.includes(source)}
-                onChange={() => setFilter("sources", toggleInArray(filters.sources, source))}
+                checked={filters.locations.includes(option.token)}
+                onChange={() => setFilter("locations", toggleInArray(filters.locations, option.token))}
               />
-              <span>{source}</span>
+              <span>{option.label}</span>
             </label>
           ))}
+          <label className="provider-item">
+            <input
+              type="checkbox"
+              checked={filters.includeUnspecified}
+              onChange={(e) => setFilter("includeUnspecified", e.target.checked)}
+            />
+            <span>Include remote/unspecified</span>
+          </label>
         </fieldset>
 
         <select

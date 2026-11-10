@@ -62,6 +62,7 @@ export function useMergedSearchJobs(activeSearches: SavedSearch[]) {
             myLoc: search.location,
             company: search.company,
             sources: search.sources?.join(","),
+            location: search.locations?.length ? search.locations : undefined,
             days: search.days,
             limit: 500,
           },

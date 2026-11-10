@@ -30,6 +30,11 @@ SAVED_SEARCH_ANALYZER_ENABLED = os.environ.get("SAVED_SEARCH_ANALYZER_ENABLED", 
 AUTO_RETRY_ENABLED = os.environ.get("AUTO_RETRY_ENABLED", "0") == "1"
 SAVED_SEARCH_ANALYZER_INTERVAL_MS = int(os.environ.get("SAVED_SEARCH_ANALYZER_INTERVAL_MS", "60000"))
 
+# Comma-separated location filter tokens (ticket 03, section B). Parsed and
+# validated at startup by services/location_filter.py; None means the default
+# set (Costa Rica, Latam, USA).
+LOCATION_FILTERS = os.environ.get("LOCATION_FILTERS")
+
 SKIP_TIERS = os.environ.get("SKIP_TIERS", "intern")
 
 HIDDEN_JOBS_PATH = os.environ.get("HIDDEN_JOBS_PATH", str(Path(STATE_DIR) / "hidden-jobs.json"))

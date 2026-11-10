@@ -3,20 +3,21 @@ from pathlib import Path
 from typing import Any
 
 import aiofiles
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 import config
 from db import fetchall, fetchone
 from services.analysis import best_analysis, get_analysis_cache
 from services.company import sanitize_job
 from services.filters import ORDER_BY_CLAUSE, build_job_filter
+from services.location_filter import resolve_location_token
 
 router = APIRouter(prefix="/api")
 
 JOB_COLUMNS = (
     "provider, source_key, job_id, title, location, employment_type, "
     "compensation, department, job_url, updated_at, posted_at, first_seen_at, "
-    "last_seen_at, skill_tier, employment_type_canonical, lat, lon"
+    "last_seen_at, skill_tier, employment_type_canonical, lat, lon, region, country"
 )
 JOB_DETAIL_COLUMNS = (
     "provider, source_key, job_id, title, location, employment_type, "
@@ -59,14 +60,25 @@ async def list_jobs(
     exc: str | None = None,
     tiers: str | None = None,
     types: str | None = None,
+    location: list[str] = Query(default=[]),
+    includeUnspecified: str | None = None,
 ) -> dict:
     page_num = max(1, page)
     page_size = min(500, max(1, limit))
     offset = (page_num - 1) * page_size
 
     include_remote = remote != "0"
+    include_unspecified = includeUnspecified != "0"
     fav_list = [c.strip() for c in favCompanies.split(",") if c.strip()] if favCompanies else None
     evaluated_flag = evaluated == "1"
+
+    location_options = None
+    if location:
+        tokens = [token.strip() for token in location if token and token.strip()]
+        try:
+            location_options = [resolve_location_token(token) for token in tokens] or None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     where, params, fts_query, title_only = build_job_filter(
         title=title,
@@ -82,6 +94,8 @@ async def list_jobs(
         types=types,
         evaluated=evaluated_flag,
         score=score,
+        locations=location_options,
+        include_unspecified=include_unspecified,
     )
 
     if title_only and fts_query is not None:
