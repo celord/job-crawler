@@ -16,19 +16,20 @@ Environment:
   CATALOG_DB   path to catalog.sqlite  (default: /app/state/catalog.sqlite)
   STATE_DIR    output directory         (default: directory of CATALOG_DB)
 """
-import os
-import sys
 import json
+import os
 import sqlite3
-import numpy as np
+import sys
 from pathlib import Path
 
-CATALOG_DB  = os.environ.get("CATALOG_DB", "/app/state/catalog.sqlite")
-STATE_DIR   = Path(os.environ.get("STATE_DIR", str(Path(CATALOG_DB).parent)))
-ONNX_DIR    = Path(__file__).resolve().parent / "onnx_minilm"
+import numpy as np
+
+CATALOG_DB = os.environ.get("CATALOG_DB", "/app/state/catalog.sqlite")
+STATE_DIR = Path(os.environ.get("STATE_DIR", str(Path(CATALOG_DB).parent)))
+ONNX_DIR = Path(__file__).resolve().parent / "onnx_minilm"
 CORPUS_PATH = STATE_DIR / "title_corpus.npy"
-IDS_PATH    = STATE_DIR / "title_ids.json"
-BATCH_SIZE  = 512
+IDS_PATH = STATE_DIR / "title_ids.json"
+BATCH_SIZE = 512
 
 
 def load_embedder():
@@ -40,7 +41,7 @@ def load_embedder():
         sys.exit(1)
 
     model_path = ONNX_DIR / "model.onnx"
-    tok_path   = ONNX_DIR / "tokenizer.json"
+    tok_path = ONNX_DIR / "tokenizer.json"
     if not model_path.exists() or not tok_path.exists():
         print(f"❌ ONNX model not found at {ONNX_DIR}. Run export_onnx.py first.")
         sys.exit(1)
@@ -57,7 +58,7 @@ def load_embedder():
 def embed_batch(tok, sess, texts):
     encs = tok.encode_batch([t or "" for t in texts])
     ids = np.array([e.ids for e in encs], dtype=np.int64)
-    am  = np.array([e.attention_mask for e in encs], dtype=np.int64)
+    am = np.array([e.attention_mask for e in encs], dtype=np.int64)
 
     input_names = {i.name for i in sess.get_inputs()}
     feed: dict = {"input_ids": ids, "attention_mask": am}
@@ -111,9 +112,11 @@ def main():
 
     print(f"[corpus] Jobs in DB with titles: {len(rows)}")
 
-    new_jobs = [(r["provider"], r["source_key"], r["job_id"], r["title"])
-                for r in rows
-                if f"{r['provider']}|{r['source_key']}|{r['job_id']}" not in existing_set]
+    new_jobs = [
+        (r["provider"], r["source_key"], r["job_id"], r["title"])
+        for r in rows
+        if f"{r['provider']}|{r['source_key']}|{r['job_id']}" not in existing_set
+    ]
 
     print(f"[corpus] New jobs to embed: {len(new_jobs)}")
     if not new_jobs:
@@ -127,7 +130,7 @@ def main():
     new_vecs_chunks = []
 
     for i in range(0, len(new_jobs), BATCH_SIZE):
-        batch = new_jobs[i:i + BATCH_SIZE]
+        batch = new_jobs[i : i + BATCH_SIZE]
         titles = [j[3] for j in batch]
         vecs = embed_batch(tok, sess, titles)
         new_ids.extend(f"{j[0]}|{j[1]}|{j[2]}" for j in batch)

@@ -8,7 +8,7 @@ import html
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -65,11 +65,67 @@ NICE_TO_HAVE_KEYWORDS_RAW = {
 }
 
 STOPWORDS = {
-    "a", "about", "across", "after", "all", "also", "an", "and", "any", "are", "as", "at", "be", "because",
-    "been", "but", "by", "can", "company", "customers", "data", "do", "for", "from", "get", "have", "help",
-    "if", "in", "into", "is", "it", "its", "join", "key", "more", "most", "need", "of", "on", "or", "our",
-    "role", "team", "that", "the", "their", "them", "this", "to", "us", "using", "we", "what", "who", "will",
-    "with", "work", "working", "you", "your",
+    "a",
+    "about",
+    "across",
+    "after",
+    "all",
+    "also",
+    "an",
+    "and",
+    "any",
+    "are",
+    "as",
+    "at",
+    "be",
+    "because",
+    "been",
+    "but",
+    "by",
+    "can",
+    "company",
+    "customers",
+    "data",
+    "do",
+    "for",
+    "from",
+    "get",
+    "have",
+    "help",
+    "if",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "join",
+    "key",
+    "more",
+    "most",
+    "need",
+    "of",
+    "on",
+    "or",
+    "our",
+    "role",
+    "team",
+    "that",
+    "the",
+    "their",
+    "them",
+    "this",
+    "to",
+    "us",
+    "using",
+    "we",
+    "what",
+    "who",
+    "will",
+    "with",
+    "work",
+    "working",
+    "you",
+    "your",
 }
 
 
@@ -122,7 +178,11 @@ def detect_provider(url):
 
 def detect_provider_from_page(raw_html):
     lowered = raw_html.lower()
-    if "boards.greenhouse.io/embed/job_board/js?for=" in lowered or 'id="grnhse_app"' in lowered or "gh_jid=" in lowered:
+    if (
+        "boards.greenhouse.io/embed/job_board/js?for=" in lowered
+        or 'id="grnhse_app"' in lowered
+        or "gh_jid=" in lowered
+    ):
         return "greenhouse"
     if "teamtailor" in lowered or "teamtailor-cdn.com" in lowered:
         return "teamtailor"
@@ -143,7 +203,9 @@ NICE_TO_HAVE_KEYWORDS = {normalize_heading(value) for value in NICE_TO_HAVE_KEYW
 
 def is_heading(line):
     normalized = normalize_heading(line.rstrip(":"))
-    if heading_matches(normalized, RESPONSIBILITY_KEYWORDS) or heading_matches(normalized, REQUIREMENT_KEYWORDS):
+    if heading_matches(normalized, RESPONSIBILITY_KEYWORDS) or heading_matches(
+        normalized, REQUIREMENT_KEYWORDS
+    ):
         return True
     if line.endswith(":") and len(line.split()) <= 8:
         return True
@@ -161,7 +223,9 @@ def is_nice_to_have_heading(heading):
 
 
 def is_requirement_heading(heading):
-    return heading_matches(normalize_heading(heading), REQUIREMENT_KEYWORDS) and not is_nice_to_have_heading(heading)
+    return heading_matches(normalize_heading(heading), REQUIREMENT_KEYWORDS) and not is_nice_to_have_heading(
+        heading
+    )
 
 
 def html_to_lines(html_text):
@@ -272,8 +336,8 @@ def infer_employment_type(*values):
     return None
 
 
-_FX = {"EUR": 1.08, "GBP": 1.27, "CAD": 0.74, "AUD": 0.65, "USD": 1.0,
-       "€": 1.08, "£": 1.27, "$": 1.0}
+_FX = {"EUR": 1.08, "GBP": 1.27, "CAD": 0.74, "AUD": 0.65, "USD": 1.0, "€": 1.08, "£": 1.27, "$": 1.0}
+
 
 def _parse_amount(s: str) -> float | None:
     """Parse a numeric string with optional K/M suffix and EU-style thousands (130.000)."""
@@ -301,15 +365,15 @@ def _detect_currency(text: str) -> str:
 
 
 _SALARY_RE = re.compile(
-    r"(?:[$€£]|USD|EUR|GBP|CAD|AUD)\s?"    # currency symbol/code
-    r"(\d[\d,. ]*\d|\d+)"                   # first number
-    r"\s*[kKmM]?"                            # optional K/M
+    r"(?:[$€£]|USD|EUR|GBP|CAD|AUD)\s?"  # currency symbol/code
+    r"(\d[\d,. ]*\d|\d+)"  # first number
+    r"\s*[kKmM]?"  # optional K/M
     r"(?:"
-      r"\s*(?:–|-|to|and)\s*"               # range separator
-      r"(?:[$€£]|USD|EUR|GBP|CAD|AUD)?\s?" # optional repeated currency
-      r"(\d[\d,. ]*\d|\d+)\s*[kKmM]?"      # second number
+    r"\s*(?:–|-|to|and)\s*"  # range separator
+    r"(?:[$€£]|USD|EUR|GBP|CAD|AUD)?\s?"  # optional repeated currency
+    r"(\d[\d,. ]*\d|\d+)\s*[kKmM]?"  # second number
     r")?",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
 
 _NUM_PART = re.compile(r"(\d[\d,. ]*(?:\.\d+)?)\s*([kKmM]?)", re.IGNORECASE)
@@ -324,9 +388,9 @@ def infer_compensation(explicit, text):
         # Find first line that looks like it contains a salary figure
         for line in html_to_lines(text):
             if re.search(
-                r"([$€£]|USD|EUR|GBP|CAD|AUD)\s?\d{2,3}|"
-                r"\b\d{2,3}[kK]\b|\b\d{2,3}[,. ]\d{3}",
-                line, re.IGNORECASE
+                r"([$€£]|USD|EUR|GBP|CAD|AUD)\s?\d{2,3}|" r"\b\d{2,3}[kK]\b|\b\d{2,3}[,. ]\d{3}",
+                line,
+                re.IGNORECASE,
             ):
                 candidate = line
                 break
@@ -369,7 +433,7 @@ def to_iso_datetime(value):
     if isinstance(value, (int, float)):
         if value > 1_000_000_000_000:
             value /= 1000.0
-        return datetime.fromtimestamp(value, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+        return datetime.fromtimestamp(value, tz=UTC).isoformat().replace("+00:00", "Z")
     return str(value)
 
 
@@ -383,7 +447,7 @@ def extract_concepts(title, *blocks, limit=10):
     scores = {}
     for size in (3, 2, 1):
         for index in range(len(filtered) - size + 1):
-            phrase = " ".join(filtered[index:index + size])
+            phrase = " ".join(filtered[index : index + size])
             if any(word in STOPWORDS for word in phrase.split()):
                 continue
             score = size
@@ -403,13 +467,28 @@ def extract_concepts(title, *blocks, limit=10):
     return selected
 
 
-def build_result(url, provider, title, posted_datetime, location, compensation, workplace_type, employment_type, responsibilities, requirements_summary, concept_text, nice_to_have_requirements=None):
+def build_result(
+    url,
+    provider,
+    title,
+    posted_datetime,
+    location,
+    compensation,
+    workplace_type,
+    employment_type,
+    responsibilities,
+    requirements_summary,
+    concept_text,
+    nice_to_have_requirements=None,
+):
     nice_to_have_requirements = nice_to_have_requirements or []
     return {
         "url": url,
         "provider": provider,
         "title": title,
-        "jd_concepts": extract_concepts(title, concept_text, "\n".join(responsibilities), "\n".join(requirements_summary)),
+        "jd_concepts": extract_concepts(
+            title, concept_text, "\n".join(responsibilities), "\n".join(requirements_summary)
+        ),
         "posted_datetime": posted_datetime,
         "location": location,
         "compensation": compensation,
@@ -419,14 +498,18 @@ def build_result(url, provider, title, posted_datetime, location, compensation, 
         "requirements_summary": requirements_summary,
         "must_have_requirements": requirements_summary,
         "nice_to_have_requirements": nice_to_have_requirements,
-        "technical_tools_mentioned": extract_tools("\n".join([
-            str(title or ""),
-            str(location or ""),
-            str(concept_text or ""),
-            "\n".join(responsibilities),
-            "\n".join(requirements_summary),
-            "\n".join(nice_to_have_requirements),
-        ])),
+        "technical_tools_mentioned": extract_tools(
+            "\n".join(
+                [
+                    str(title or ""),
+                    str(location or ""),
+                    str(concept_text or ""),
+                    "\n".join(responsibilities),
+                    "\n".join(requirements_summary),
+                    "\n".join(nice_to_have_requirements),
+                ]
+            )
+        ),
     }
 
 
@@ -461,11 +544,15 @@ def extract_greenhouse_identifiers(url, raw_html=None):
 
     company = None
     if raw_html:
-        embed_match = re.search(r"boards\.greenhouse\.io/embed/job_board/js\?for=([A-Za-z0-9_-]+)", raw_html, flags=re.I)
+        embed_match = re.search(
+            r"boards\.greenhouse\.io/embed/job_board/js\?for=([A-Za-z0-9_-]+)", raw_html, flags=re.I
+        )
         if embed_match:
             company = embed_match.group(1)
         else:
-            board_match = re.search(r'["\']board(?:Token|Name)?["\']\s*[:=]\s*["\']([A-Za-z0-9_-]+)["\']', raw_html, flags=re.I)
+            board_match = re.search(
+                r'["\']board(?:Token|Name)?["\']\s*[:=]\s*["\']([A-Za-z0-9_-]+)["\']', raw_html, flags=re.I
+            )
             if board_match:
                 company = board_match.group(1)
 
@@ -484,7 +571,7 @@ def greenhouse_page_data_url(url):
 
 def extract_greenhouse_identifiers_from_page_data(url):
     payload = fetch_json(greenhouse_page_data_url(url))
-    page_context = ((payload.get("result") or {}).get("pageContext") or {})
+    page_context = (payload.get("result") or {}).get("pageContext") or {}
     job = page_context.get("job") or {}
 
     job_id = job.get("id")
@@ -521,7 +608,9 @@ def parse_greenhouse(url):
     sections = extract_sections_from_html(content)
     responsibilities = bulletize(select_section(sections, RESPONSIBILITY_KEYWORDS))
     requirements, nice_to_have = split_requirement_sections(sections)
-    location = ((payload.get("location") or {}).get("name") if isinstance(payload.get("location"), dict) else None)
+    location = (
+        (payload.get("location") or {}).get("name") if isinstance(payload.get("location"), dict) else None
+    )
 
     return build_result(
         url=url,
@@ -548,7 +637,9 @@ def extract_greenhouse_compensation(metadata):
             continue
         name = str(item.get("name", ""))
         value = item.get("value")
-        if any(keyword in name.lower() for keyword in ("salary", "compensation", "ote", "equity")) and value not in (None, ""):
+        if any(
+            keyword in name.lower() for keyword in ("salary", "compensation", "ote", "equity")
+        ) and value not in (None, ""):
             values.append(f"{name}: {value}")
     return "; ".join(values) if values else None
 
@@ -579,12 +670,14 @@ def parse_lever(url):
             requirements = bulletize(lines, limit=12)
 
     description_text = "\n\n".join(
-        part for part in (
+        part
+        for part in (
             job.get("openingPlain"),
             job.get("descriptionPlain"),
             job.get("descriptionBodyPlain"),
             job.get("additionalPlain"),
-        ) if part
+        )
+        if part
     )
     categories = job.get("categories") or {}
     workplace_type = job.get("workplaceType")
@@ -610,15 +703,21 @@ def parse_bamboohr(url):
     host_parts = parsed.netloc.split(".")
     if len(host_parts) < 3:
         raise ValueError(f"Unsupported BambooHR URL: {url}")
-    company = host_parts[0]
     payload = fetch_json(url, headers={"Accept": "application/json"})
     job = (payload.get("result") or {}).get("jobOpening") or {}
     location_data = job.get("location") or {}
-    location = ", ".join(part for part in (
-        location_data.get("city"),
-        location_data.get("state"),
-        location_data.get("addressCountry"),
-    ) if part) or None
+    location = (
+        ", ".join(
+            part
+            for part in (
+                location_data.get("city"),
+                location_data.get("state"),
+                location_data.get("addressCountry"),
+            )
+            if part
+        )
+        or None
+    )
     description = str(job.get("description", ""))
     sections = extract_sections_from_html(description)
     requirements, nice_to_have = split_requirement_sections(sections)
@@ -673,7 +772,9 @@ def parse_generic_jobposting(url):
 
 
 def extract_jobposting_ld_json(raw_html):
-    scripts = re.findall(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', raw_html, flags=re.I | re.S)
+    scripts = re.findall(
+        r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', raw_html, flags=re.I | re.S
+    )
     for script in scripts:
         payload = None
         for candidate in (script.strip(), html.unescape(script.strip())):
@@ -749,8 +850,10 @@ def extract_ld_json_compensation(jobposting):
     if not min_val and not max_val:
         return None
     multiplier = 2080 if "HOUR" in unit.upper() else 12 if "MONTH" in unit.upper() else 1
+
     def to_int(v):
         return int(round(float(v) * fx * multiplier)) if v is not None else None
+
     return {"min": to_int(min_val), "max": to_int(max_val)}
 
 

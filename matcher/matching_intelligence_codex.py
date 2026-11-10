@@ -11,17 +11,56 @@ import re
 
 
 US_STATE_NAMES = {
-    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
-    "colorado": "CO", "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA",
-    "hawaii": "HI", "idaho": "ID", "illinois": "IL", "indiana": "IN", "iowa": "IA",
-    "kansas": "KS", "kentucky": "KY", "louisiana": "LA", "maine": "ME", "maryland": "MD",
-    "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
-    "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH",
-    "new jersey": "NJ", "new mexico": "NM", "new york": "NY", "north carolina": "NC",
-    "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
-    "rhode island": "RI", "south carolina": "SC", "south dakota": "SD", "tennessee": "TN",
-    "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA",
-    "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+    "alabama": "AL",
+    "alaska": "AK",
+    "arizona": "AZ",
+    "arkansas": "AR",
+    "california": "CA",
+    "colorado": "CO",
+    "connecticut": "CT",
+    "delaware": "DE",
+    "florida": "FL",
+    "georgia": "GA",
+    "hawaii": "HI",
+    "idaho": "ID",
+    "illinois": "IL",
+    "indiana": "IN",
+    "iowa": "IA",
+    "kansas": "KS",
+    "kentucky": "KY",
+    "louisiana": "LA",
+    "maine": "ME",
+    "maryland": "MD",
+    "massachusetts": "MA",
+    "michigan": "MI",
+    "minnesota": "MN",
+    "mississippi": "MS",
+    "missouri": "MO",
+    "montana": "MT",
+    "nebraska": "NE",
+    "nevada": "NV",
+    "new hampshire": "NH",
+    "new jersey": "NJ",
+    "new mexico": "NM",
+    "new york": "NY",
+    "north carolina": "NC",
+    "north dakota": "ND",
+    "ohio": "OH",
+    "oklahoma": "OK",
+    "oregon": "OR",
+    "pennsylvania": "PA",
+    "rhode island": "RI",
+    "south carolina": "SC",
+    "south dakota": "SD",
+    "tennessee": "TN",
+    "texas": "TX",
+    "utah": "UT",
+    "vermont": "VT",
+    "virginia": "VA",
+    "washington": "WA",
+    "west virginia": "WV",
+    "wisconsin": "WI",
+    "wyoming": "WY",
 }
 US_STATE_CODES = set(US_STATE_NAMES.values())
 AMBIGUOUS_STATE_CODES = {"ID", "IN", "ME", "OR"}
@@ -151,14 +190,18 @@ def extract_tools(text, limit=40):
 def extract_candidate_facts(profile_text):
     text = str(profile_text or "")
     sections = profile_sections(text)
-    location_source = "\n".join(
-        body for name, body in sections.items()
-        if ("identity" in name or "strategy" in name or "general" in name)
-        and "experience" not in name
-        and "cv" not in name
-        and "portal" not in name
-        and "target" not in name
-    ).strip() or text[:2500]
+    location_source = (
+        "\n".join(
+            body
+            for name, body in sections.items()
+            if ("identity" in name or "strategy" in name or "general" in name)
+            and "experience" not in name
+            and "cv" not in name
+            and "portal" not in name
+            and "target" not in name
+        ).strip()
+        or text[:2500]
+    )
 
     countries = country_codes_in_text(location_source)
     regions = us_regions_in_text(location_source, include_ambiguous_codes=False)
@@ -178,14 +221,28 @@ def location_lines(text):
     for raw in str(text or "").splitlines():
         line = " ".join(raw.split()).strip()
         lowered = line.lower()
-        if line and any(term in lowered for term in ("location", "remote", "hybrid", "on-site", "onsite", "eligible", "not available", "not eligible")):
+        if line and any(
+            term in lowered
+            for term in (
+                "location",
+                "remote",
+                "hybrid",
+                "on-site",
+                "onsite",
+                "eligible",
+                "not available",
+                "not eligible",
+            )
+        ):
             lines.append(line)
     return lines[:20]
 
 
 def excluded_regions(text):
     regions = set()
-    for window in re.findall(r"(?:not eligible|not available|cannot be hired|excluded?|except)\b[^.\n;]*", str(text or ""), re.I):
+    for window in re.findall(
+        r"(?:not eligible|not available|cannot be hired|excluded?|except)\b[^.\n;]*", str(text or ""), re.I
+    ):
         regions.update(us_regions_in_text(window))
     return sorted(regions)
 
@@ -269,12 +326,18 @@ def evaluate_location(candidate_facts, job_policy):
 
     blocked = sorted(candidate_regions.intersection(blocked_regions))
     if blocked:
-        return {"status": "incompatible", "reason": f"Candidate region is explicitly excluded: {', '.join(blocked)}."}
+        return {
+            "status": "incompatible",
+            "reason": f"Candidate region is explicitly excluded: {', '.join(blocked)}.",
+        }
 
     if eligible_countries and candidate_countries:
         overlap = sorted(candidate_countries.intersection(eligible_countries))
         if overlap:
-            return {"status": "compatible", "reason": f"Candidate country matches eligible job country scope: {', '.join(overlap)}."}
+            return {
+                "status": "compatible",
+                "reason": f"Candidate country matches eligible job country scope: {', '.join(overlap)}.",
+            }
         return {
             "status": "incompatible",
             "reason": f"Candidate country does not match eligible job country scope ({', '.join(sorted(eligible_countries))}).",
@@ -283,7 +346,10 @@ def evaluate_location(candidate_facts, job_policy):
     if eligible_regions and candidate_regions:
         overlap = sorted(candidate_regions.intersection(eligible_regions))
         if overlap:
-            return {"status": "compatible", "reason": f"Candidate region matches eligible job region scope: {', '.join(overlap)}."}
+            return {
+                "status": "compatible",
+                "reason": f"Candidate region matches eligible job region scope: {', '.join(overlap)}.",
+            }
         if job_policy.get("workplace_type") != "remote":
             return {
                 "status": "incompatible",

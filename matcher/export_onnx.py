@@ -11,7 +11,6 @@ Outputs:
 Run once:
   docker compose run --rm matcher python /app/export_onnx.py
 """
-import os
 import sys
 from pathlib import Path
 
@@ -20,13 +19,14 @@ OUT_DIR = Path(__file__).resolve().parent / "onnx_minilm"
 
 # model.onnx lives in the onnx/ subfolder of this repo
 ONNX_FILES = {
-    "onnx/model.onnx": "model.onnx",          # src_path → local_name
+    "onnx/model.onnx": "model.onnx",  # src_path → local_name
     "tokenizer.json": "tokenizer.json",
     "tokenizer_config.json": "tokenizer_config.json",
     "special_tokens_map.json": "special_tokens_map.json",
     "vocab.txt": "vocab.txt",
     "1_Pooling/config.json": "1_Pooling/config.json",
 }
+
 
 def main():
     try:
@@ -45,7 +45,7 @@ def main():
             print(f"  ✓ {local_name} (already present)")
             continue
         try:
-            path = hf_hub_download(repo_id=MODEL_REPO, filename=src_filename, local_dir=str(OUT_DIR))
+            hf_hub_download(repo_id=MODEL_REPO, filename=src_filename, local_dir=str(OUT_DIR))
             # hf_hub_download preserves the src path structure — move to flat local_name if needed
             downloaded = OUT_DIR / src_filename
             if downloaded.exists() and downloaded != dest:
@@ -68,8 +68,8 @@ def main():
     # Quick sanity check
     print("\nRunning inference sanity check...")
     try:
-        import onnxruntime as ort
         import numpy as np
+        import onnxruntime as ort
         from tokenizers import Tokenizer
 
         tok = Tokenizer.from_file(str(tok_path))
@@ -79,7 +79,7 @@ def main():
         titles = ["Senior Technical Program Manager", "Fry Cook"]
         encs = tok.encode_batch(titles)
         ids = np.array([e.ids for e in encs], dtype=np.int64)
-        am  = np.array([e.attention_mask for e in encs], dtype=np.int64)
+        am = np.array([e.attention_mask for e in encs], dtype=np.int64)
 
         sess = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
         input_names = {i.name for i in sess.get_inputs()}
@@ -98,6 +98,7 @@ def main():
         print("✅ ONNX model OK")
     except Exception as e:
         print(f"⚠ Sanity check failed: {e}")
+
 
 if __name__ == "__main__":
     main()

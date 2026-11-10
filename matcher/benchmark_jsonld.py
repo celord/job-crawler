@@ -11,7 +11,6 @@ with both input formats, and prints a scorecard diff table.
 import argparse
 import json
 import os
-import random
 import sqlite3
 import sys
 import time
@@ -25,10 +24,18 @@ API_KEY = os.environ.get("NVIDIA_API_KEY", "").strip()
 DEFAULT_MODEL = os.environ.get("NVIDIA_MODEL", "meta/llama-4-maverick-17b-128e-instruct")
 URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
-DIMS = ["core_skills", "relevant_experience", "target_alignment", "seniority_fit", "workplace_fit", "requirements_coverage"]
+DIMS = [
+    "core_skills",
+    "relevant_experience",
+    "target_alignment",
+    "seniority_fit",
+    "workplace_fit",
+    "requirements_coverage",
+]
 
 
 # ── profile loading ──────────────────────────────────────────────────────────
+
 
 def load_profile(profile_dir):
     root = Path(profile_dir) if Path(profile_dir).is_absolute() else BASE_DIR / profile_dir
@@ -67,10 +74,16 @@ def _first_target_role(profile_data):
 
 # ── job input formatters ─────────────────────────────────────────────────────
 
+
 def markdown_format(record):
     parts = []
-    for key, label in [("title", "Title"), ("company", "Company"), ("location", "Location"),
-                        ("employment_type", "Employment type"), ("compensation", "Compensation")]:
+    for key, label in [
+        ("title", "Title"),
+        ("company", "Company"),
+        ("location", "Location"),
+        ("employment_type", "Employment type"),
+        ("compensation", "Compensation"),
+    ]:
         if record.get(key):
             parts.append(f"{label}: {record[key]}")
     responsibilities = record.get("responsibilities") or []
@@ -90,10 +103,12 @@ def markdown_format(record):
 
 def jsonld_format(record, target_role):
     from job_post_parser import to_jsonld
+
     return to_jsonld(record, target_role)
 
 
 # ── model call ───────────────────────────────────────────────────────────────
+
 
 def call_model(system, user_content, model):
     payload = {
@@ -117,12 +132,14 @@ def call_model(system, user_content, model):
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
+
 def pick_jobs(n):
     db = sqlite3.connect(CATALOG_DB)
     cur = db.execute(
         "SELECT provider, source_key, job_id, parsed_jd FROM catalog_jobs "
         "WHERE parsed_jd IS NOT NULL AND parsed_jd != '{}' "
-        "ORDER BY RANDOM() LIMIT ?", (n * 4,)
+        "ORDER BY RANDOM() LIMIT ?",
+        (n * 4,),
     )
     rows = cur.fetchall()
     db.close()
@@ -133,7 +150,11 @@ def pick_jobs(n):
             pjd = json.loads(pjd_raw)
         except Exception:
             continue
-        if (pjd.get("responsibilities") or pjd.get("requirements_summary") or pjd.get("must_have_requirements")):
+        if (
+            pjd.get("responsibilities")
+            or pjd.get("requirements_summary")
+            or pjd.get("must_have_requirements")
+        ):
             good.append((provider, sk, jid, pjd))
         if len(good) >= n:
             break
@@ -156,7 +177,6 @@ def print_table(results):
     }
     col_w = 9
 
-    header_dims = "  ".join(f"{'MD':>{col_w}} {'JL':>{col_w}} {'Δ':>5}" for _ in DIMS)
     dim_labels = "  ".join(f"{dims_short[d]:>{col_w*2+7}}" for d in DIMS)
     print()
     print(f"{'Job':<45}  {dim_labels}  {'avg_MD':>7} {'avg_JL':>7} {'Δavg':>6}  {'tok_MD':>7} {'tok_JL':>7}")
@@ -185,10 +205,14 @@ def print_table(results):
         dims_str = "  ".join(dim_cells)
 
         sign_avg = "+" if delta_avg > 0 else ""
-        print(f"{label:<45}  {dims_str}  {avg_md:>7.2f} {avg_jl:>7.2f} {sign_avg+str(delta_avg):>6}  {tok_md:>7} {tok_jl:>7}")
+        print(
+            f"{label:<45}  {dims_str}  {avg_md:>7.2f} {avg_jl:>7.2f} {sign_avg+str(delta_avg):>6}  {tok_md:>7} {tok_jl:>7}"
+        )
 
     print("-" * 200)
-    print(f"Total prompt tokens: Markdown={total_md_tok}  JSON-LD={total_jl_tok}  savings={total_md_tok - total_jl_tok} ({round((1 - total_jl_tok/max(total_md_tok,1))*100, 1)}%)")
+    print(
+        f"Total prompt tokens: Markdown={total_md_tok}  JSON-LD={total_jl_tok}  savings={total_md_tok - total_jl_tok} ({round((1 - total_jl_tok/max(total_md_tok,1))*100, 1)}%)"
+    )
 
 
 def main():
@@ -225,18 +249,24 @@ def main():
         jl_text = jsonld_format(record, target_role)
 
         try:
-            md_result, md_ptok, md_ctok = call_model(system_prompt, f"Analyze this job:\n\n{md_text}", args.model)
+            md_result, md_ptok, md_ctok = call_model(
+                system_prompt, f"Analyze this job:\n\n{md_text}", args.model
+            )
             time.sleep(0.5)
-            jl_result, jl_ptok, jl_ctok = call_model(system_prompt, f"Analyze this job:\n\n{jl_text}", args.model)
+            jl_result, jl_ptok, jl_ctok = call_model(
+                system_prompt, f"Analyze this job:\n\n{jl_text}", args.model
+            )
             print(f"MD={md_ptok}tok JL={jl_ptok}tok")
-            results.append({
-                "title": title,
-                "source_key": sk,
-                "markdown": {"scorecard": md_result.get("scorecard", {}), "prompt_tokens": md_ptok},
-                "jsonld": {"scorecard": jl_result.get("scorecard", {}), "prompt_tokens": jl_ptok},
-                "markdown_input_chars": len(md_text),
-                "jsonld_input_chars": len(jl_text),
-            })
+            results.append(
+                {
+                    "title": title,
+                    "source_key": sk,
+                    "markdown": {"scorecard": md_result.get("scorecard", {}), "prompt_tokens": md_ptok},
+                    "jsonld": {"scorecard": jl_result.get("scorecard", {}), "prompt_tokens": jl_ptok},
+                    "markdown_input_chars": len(md_text),
+                    "jsonld_input_chars": len(jl_text),
+                }
+            )
         except Exception as e:
             print(f"ERROR: {e}")
 

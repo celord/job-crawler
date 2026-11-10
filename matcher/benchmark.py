@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-import os, json, time, requests, concurrent.futures, re
+import concurrent.futures
+import json
+import os
+import re
+import time
+
+import requests
 
 API_KEY = os.environ["NVIDIA_API_KEY"]
 URL = "https://integrate.api.nvidia.com/v1"
@@ -53,7 +59,6 @@ Employment: Full-time
 Description: Own defined problem spaces within career sites product area. Contribute to shared roadmap across multiple PMs. Lead discovery: candidate, customer, market needs. Partner with engineering and design to ship enterprise-ready career site capabilities. Balance usability, performance, accessibility, SEO, localization, compliance. Collaborate with platform, AI, integrations, SAP teams. Define and track success metrics: conversion, engagement, adoption, performance.
 
 Requirements: 6+ years PM in B2B SaaS or enterprise software. Experience building career sites, job boards, candidate portals, ATS front-ends, or job search/discovery. Strong product discovery skills. Technical fluency, familiarity with CMS, SEO for job listings, web performance a plus. Experience with global high-traffic products (localization, accessibility, compliance).""",
-
     "Wrapbook - Sr PM II Production Payroll": """Title: Senior Product Manager II
 Company: Wrapbook
 Location: United States (Remote)
@@ -61,7 +66,6 @@ Location: United States (Remote)
 Responsibilities: Own roadmap and vision for product area. Collaborate cross-functionally with sales, legal, go-to-market. Deep understanding of production payroll domain. Define success metrics, data-driven prioritization. Advocate for quality and compliance in financial/regulated environments. Drive execution end-to-end. Use AI tools daily - discovery, analysis, writing, code comprehension, prototyping. PMs expected to be builders, not just strategists.
 
 Requirements: Strong PM fundamentals, cross-functional collaboration, regulated/financial domain experience, AI tool fluency, builder mindset.""",
-
     "A Place for Mom - Sr/Lead PM Agentic": """Title: Senior/Lead Product Manager, Agentic Experiences
 Company: A Place for Mom
 Location: United States (Remote)
@@ -78,7 +82,11 @@ def call_model(model, jd_name, jd_text):
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM + "\n\nCandidate profile:\n" + PROFILE, "cache_control": {"type": "ephemeral"}},
+            {
+                "role": "system",
+                "content": SYSTEM + "\n\nCandidate profile:\n" + PROFILE,
+                "cache_control": {"type": "ephemeral"},
+            },
             {"role": "user", "content": "Analyze this job posting:\n\n" + jd_text},
         ],
         "temperature": 0.2,
@@ -91,7 +99,12 @@ def call_model(model, jd_name, jd_text):
         r = requests.post(f"{URL}/chat/completions", headers=headers, json=payload, timeout=180)
         elapsed = round(time.time() - t0, 1)
         if not r.ok:
-            return {"model": model, "jd": jd_name, "error": f"HTTP {r.status_code}: {r.text[:200]}", "elapsed": elapsed}
+            return {
+                "model": model,
+                "jd": jd_name,
+                "error": f"HTTP {r.status_code}: {r.text[:200]}",
+                "elapsed": elapsed,
+            }
         msg = r.json()["choices"][0]["message"]
         content = msg.get("content") or msg.get("reasoning_content", "") or ""
         content = re.sub(r"^```(?:json)?\s*", "", content.strip())
@@ -115,11 +128,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=18) as pool:
         res = f.result()
         results.append(res)
         if "error" in res:
-            print(f"[{res['elapsed']}s] ERROR  {res['model'][:42]} | {res['jd'][:35]} | {res['error'][:80]}", flush=True)
+            print(
+                f"[{res['elapsed']}s] ERROR  {res['model'][:42]} | {res['jd'][:35]} | {res['error'][:80]}",
+                flush=True,
+            )
         else:
             sc = res["result"].get("scorecard", {})
             avg = round(sum(v.get("score", 0) for v in sc.values()) / len(sc), 2) if sc else 0
-            print(f"[{res['elapsed']}s] OK     {res['model'][:42]} | {res['jd'][:35]} | avg={avg} verdict={res['result'].get('verdict', '?')}", flush=True)
+            print(
+                f"[{res['elapsed']}s] OK     {res['model'][:42]} | {res['jd'][:35]} | avg={avg} verdict={res['result'].get('verdict', '?')}",
+                flush=True,
+            )
 
 print("\n===JSON_RESULTS===")
 print(json.dumps(results, ensure_ascii=False, indent=2))

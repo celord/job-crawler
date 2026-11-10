@@ -4,26 +4,33 @@ Ensemble fit analyzer: runs 3 scorer models in parallel per JD, then synthesizes
 with DeepSeek. Accepts the same --jobs-jsonl / --results-jsonl interface as
 job_fit_analyzer.py so server.ts can call it as a drop-in replacement.
 """
-import os, sys, json, time, re, argparse, concurrent.futures
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+import sys
+import time
 from pathlib import Path
+
 import requests
 
 try:
+    from job_post_parser import to_jsonld
     from matching_intelligence import (
         build_match_context,
         build_match_context_from_profile_data,
         build_profile_text,
         format_match_context,
     )
-    from job_post_parser import to_jsonld
 except ImportError:  # pragma: no cover - package import path
+    from .job_post_parser import to_jsonld
     from .matching_intelligence import (
         build_match_context,
         build_match_context_from_profile_data,
         build_profile_text,
         format_match_context,
     )
-    from .job_post_parser import to_jsonld
 
 BASE_DIR = Path(__file__).parent
 DEFAULT_PROFILE_DIR = "career-ops"
@@ -40,22 +47,27 @@ def _first_target_role(profile_data: dict) -> str:
         if stripped.startswith("- ") and stripped[2:].strip().startswith('"'):
             return stripped[2:].strip().strip('"')
     return ""
+
+
 DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 
 def chat_completions_url():
-    explicit_url = (
-        os.environ.get("NVIDIA_CHAT_COMPLETIONS_URL")
-        or os.environ.get("NVIDIA_NIM_CHAT_COMPLETIONS_URL")
+    explicit_url = os.environ.get("NVIDIA_CHAT_COMPLETIONS_URL") or os.environ.get(
+        "NVIDIA_NIM_CHAT_COMPLETIONS_URL"
     )
     if explicit_url:
         return explicit_url.strip().rstrip("/")
 
     base_url = (
-        os.environ.get("NVIDIA_BASE_URL")
-        or os.environ.get("NVIDIA_NIM_BASE_URL")
-        or DEFAULT_NVIDIA_BASE_URL
-    ).strip().rstrip("/")
+        (
+            os.environ.get("NVIDIA_BASE_URL")
+            or os.environ.get("NVIDIA_NIM_BASE_URL")
+            or DEFAULT_NVIDIA_BASE_URL
+        )
+        .strip()
+        .rstrip("/")
+    )
     if base_url.endswith("/chat/completions"):
         return base_url
     return f"{base_url}/chat/completions"
@@ -79,7 +91,9 @@ def csv_env(name, default):
 
 
 SCORERS = csv_env("NVIDIA_ENSEMBLE_SCORERS", DEFAULT_SCORERS)
-SYNTHESIZER = os.environ.get("NVIDIA_ENSEMBLE_SYNTHESIZER", DEFAULT_SYNTHESIZER).strip() or DEFAULT_SYNTHESIZER
+SYNTHESIZER = (
+    os.environ.get("NVIDIA_ENSEMBLE_SYNTHESIZER", DEFAULT_SYNTHESIZER).strip() or DEFAULT_SYNTHESIZER
+)
 
 _PRE_SCORING_CHECKS = """
 === PRE-SCORING CHECKS (apply before assigning dimension scores) ===
@@ -109,8 +123,11 @@ Check D — Geographic eligibility:
 === END PRE-SCORING CHECKS ===
 """
 
-SCORER_SYSTEM = """You are a senior technical recruiting evaluator. Evaluate the job posting against the candidate profile.
-""" + _PRE_SCORING_CHECKS + """
+SCORER_SYSTEM = (
+    """You are a senior technical recruiting evaluator. Evaluate the job posting against the candidate profile.
+"""
+    + _PRE_SCORING_CHECKS
+    + """
 Return ONLY valid JSON, no markdown, no explanation:
 {
   "archetype": {"primary": "...", "secondary": "..."},
@@ -131,9 +148,13 @@ Return ONLY valid JSON, no markdown, no explanation:
   "remarques": "..."
 }
 Scores 1.0-5.0."""
+)
 
-SYNTHESIS_SYSTEM = """You are a senior technical recruiting evaluator synthesizing multiple independent analyses of the same candidate + job.
-""" + _PRE_SCORING_CHECKS + """
+SYNTHESIS_SYSTEM = (
+    """You are a senior technical recruiting evaluator synthesizing multiple independent analyses of the same candidate + job.
+"""
+    + _PRE_SCORING_CHECKS
+    + """
 Synthesis rules:
 - If models agree on a score (within 0.5), use that score.
 - If models diverge, reason through which is most accurate; explain in the reason field.
@@ -161,6 +182,7 @@ Return ONLY valid JSON, no markdown, no explanation:
   "remarques": "..."
 }
 Scores 1.0-5.0."""
+)
 
 
 def log(msg):
@@ -220,7 +242,9 @@ def call_model(model, system, user_content, max_tokens=2000, temperature=0.2, re
             if attempt == retries:
                 raise
             wait = attempt * 2
-            log(f"[ensemble] {model.split('/')[-1]} | attempt {attempt}/{retries} failed: {e} | retrying in {wait}s")
+            log(
+                f"[ensemble] {model.split('/')[-1]} | attempt {attempt}/{retries} failed: {e} | retrying in {wait}s"
+            )
             time.sleep(wait)
 
 
@@ -238,9 +262,12 @@ def score_to_100(scorecard):
 
 
 def infer_recommendation(score_5):
-    if score_5 >= 4.5: return "apply_now"
-    if score_5 >= 4.0: return "worth_applying"
-    if score_5 >= 3.5: return "only_if_strategic"
+    if score_5 >= 4.5:
+        return "apply_now"
+    if score_5 >= 4.0:
+        return "worth_applying"
+    if score_5 >= 3.5:
+        return "only_if_strategic"
     return "do_not_apply"
 
 
@@ -251,27 +278,46 @@ def score_100_to_5(score):
 def remove_location_false_positives(analysis):
     terms = ("geographic mismatch", "location mismatch", "state exclusion", "country mismatch")
     for key in ("blockers", "faiblesses"):
-        analysis[key] = [item for item in analysis.get(key, []) if not any(term in str(item).lower() for term in terms)]
+        analysis[key] = [
+            item for item in analysis.get(key, []) if not any(term in str(item).lower() for term in terms)
+        ]
     analysis["gaps"] = [
-        item for item in analysis.get("gaps", [])
+        item
+        for item in analysis.get("gaps", [])
         if not any(term in str(item.get("gap", "")).lower() for term in terms)
     ]
 
 
 _CONSULTING_SIGNALS = (
-    "billable hours", "client delivery", "client engagement", "placed at client",
-    "work at client", "on-site at client", "client-facing delivery", "consulting firm",
-    "professional services firm", "staffing firm", "accenture", "mckinsey", "deloitte",
-    "bcg", "bain", "kpmg", "pwc", "ernst & young", "big 4", "boutique consulting",
+    "billable hours",
+    "client delivery",
+    "client engagement",
+    "placed at client",
+    "work at client",
+    "on-site at client",
+    "client-facing delivery",
+    "consulting firm",
+    "professional services firm",
+    "staffing firm",
+    "accenture",
+    "mckinsey",
+    "deloitte",
+    "bcg",
+    "bain",
+    "kpmg",
+    "pwc",
+    "ernst & young",
+    "big 4",
+    "boutique consulting",
 )
 
 
 _TOOL_BLOCKER_PATTERNS = re.compile(
-    r'\b(unmet hard requirement|hard requirement unmet|missing.*tool|tooling gap|no.*experience with|lacks.*experience with)\b',
+    r"\b(unmet hard requirement|hard requirement unmet|missing.*tool|tooling gap|no.*experience with|lacks.*experience with)\b",
     re.IGNORECASE,
 )
 _SOFTENED_TOOL_PATTERN = re.compile(
-    r'(?:tools?\s+(?:like|such as|including)|familiarity with|experience with tools like)\s+(\w[\w\s\-\.]+)',
+    r"(?:tools?\s+(?:like|such as|including)|familiarity with|experience with tools like)\s+(\w[\w\s\-\.]+)",
     re.IGNORECASE,
 )
 
@@ -298,10 +344,20 @@ def _remove_softened_tool_blockers(analysis, jd_text):
     gaps = analysis.setdefault("gaps", [])
     existing = {str(g.get("gap", "")).strip().lower() for g in gaps if isinstance(g, dict)}
     for b in demoted:
-        gap_text = str(b).replace("Unmet hard requirement: ", "Tool ramp-up: ").replace("Hard requirement unmet: ", "Tool ramp-up: ")
+        gap_text = (
+            str(b)
+            .replace("Unmet hard requirement: ", "Tool ramp-up: ")
+            .replace("Hard requirement unmet: ", "Tool ramp-up: ")
+        )
         if gap_text.lower() not in existing:
-            gaps.append({"gap": gap_text, "severity": "low", "blocker": False,
-                         "mitigation": "JD uses softening language ('tools like X') — direct tool experience not strictly required."})
+            gaps.append(
+                {
+                    "gap": gap_text,
+                    "severity": "low",
+                    "blocker": False,
+                    "mitigation": "JD uses softening language ('tools like X') — direct tool experience not strictly required.",
+                }
+            )
 
 
 def _remove_consulting_false_positive(analysis, jd_text):
@@ -316,14 +372,15 @@ def _remove_consulting_false_positive(analysis, jd_text):
         return
     analysis["blockers"] = [b for b in blockers if consulting_blocker_prefix not in str(b).lower()]
     analysis["gaps"] = [
-        g for g in analysis.get("gaps", [])
-        if consulting_blocker_prefix not in str(g.get("gap", "")).lower()
+        g for g in analysis.get("gaps", []) if consulting_blocker_prefix not in str(g.get("gap", "")).lower()
     ]
     scorecard = analysis.get("scorecard") or {}
     target = scorecard.get("target_alignment")
     if isinstance(target, dict) and float(target.get("score", 5.0) or 5.0) <= 2.0:
         target["score"] = 3.5
-        target["reason"] = "[Guardrail] Check A false positive removed — no explicit consulting signals in JD."
+        target["reason"] = (
+            "[Guardrail] Check A false positive removed — no explicit consulting signals in JD."
+        )
 
 
 def apply_match_guardrails(analysis, match_context):
@@ -346,7 +403,9 @@ def apply_match_guardrails(analysis, match_context):
             workplace["score"] = min(float(workplace.get("score", 3.0) or 3.0), 1.5)
             workplace["reason"] = reason or "Structured location check found the role incompatible."
         if not any(item.get("gap") == blocker for item in analysis.get("gaps", [])):
-            analysis.setdefault("gaps", []).append({"gap": blocker, "severity": "high", "blocker": True, "mitigation": ""})
+            analysis.setdefault("gaps", []).append(
+                {"gap": blocker, "severity": "high", "blocker": True, "mitigation": ""}
+            )
 
     _remove_consulting_false_positive(analysis, (match_context or {}).get("_jd_text", ""))
     _remove_softened_tool_blockers(analysis, (match_context or {}).get("_jd_text", ""))
@@ -434,7 +493,9 @@ def ensemble_analyze(jd_text, profile_text, job_label, profile_data=None, cache_
         raise RuntimeError("All scorers failed")
 
     # Phase 2: synthesis — also cacheable
-    synth_cache_path = (_scorer_cache_path(cache_dir, job_id, f"{SYNTHESIZER}__synthesis") if cache_dir and job_id else None)
+    synth_cache_path = (
+        _scorer_cache_path(cache_dir, job_id, f"{SYNTHESIZER}__synthesis") if cache_dir and job_id else None
+    )
     synthesis = None
     if synth_cache_path and synth_cache_path.exists():
         try:
@@ -468,7 +529,9 @@ def ensemble_analyze(jd_text, profile_text, job_label, profile_data=None, cache_
             except Exception as e:
                 if synth_attempt == synth_retries:
                     raise
-                log(f"[ensemble] {job_label} | synthesis JSON parse error (attempt {synth_attempt}/{synth_retries}): {e} | retrying…")
+                log(
+                    f"[ensemble] {job_label} | synthesis JSON parse error (attempt {synth_attempt}/{synth_retries}): {e} | retrying…"
+                )
         log(f"[ensemble] {job_label} | synthesis done")
 
     return synthesis, match_context
@@ -505,8 +568,12 @@ def _process_one_job(idx, line, profile_text, profile_data, pipeline_tag, cache_
     t0 = time.time()
     try:
         synthesis, match_context = ensemble_analyze(
-            jd_text, profile_text, job_label, profile_data=profile_data,
-            cache_dir=cache_dir, job_id=job_id,
+            jd_text,
+            profile_text,
+            job_label,
+            profile_data=profile_data,
+            cache_dir=cache_dir,
+            job_id=job_id,
         )
         scorecard = synthesis.get("scorecard", {})
         score_100 = score_to_100(scorecard)
@@ -526,7 +593,10 @@ def _process_one_job(idx, line, profile_text, profile_data, pipeline_tag, cache_
             "tool_match": synthesis.get("tool_match", []),
             "forces": synthesis.get("forces", []),
             "faiblesses": synthesis.get("faiblesses", []),
-            "gaps": [{"gap": f, "severity": "medium", "blocker": False, "mitigation": ""} for f in synthesis.get("faiblesses", [])],
+            "gaps": [
+                {"gap": f, "severity": "medium", "blocker": False, "mitigation": ""}
+                for f in synthesis.get("faiblesses", [])
+            ],
             "blockers": blockers,
             "standout_differentiator": synthesis.get("remarques", ""),
             "remarques": synthesis.get("remarques", ""),
@@ -549,19 +619,30 @@ def _process_one_job(idx, line, profile_text, profile_data, pipeline_tag, cache_
             "analysis": analysis,
             **({"jd_parse_error": jd_parse_error} if jd_parse_error else {}),
         }
-        log(f"[ensemble-batch] {job_label} | done | score={score_100} verdict={verdict} elapsed={row['elapsed']}s")
+        log(
+            f"[ensemble-batch] {job_label} | done | score={score_100} verdict={verdict} elapsed={row['elapsed']}s"
+        )
         # Clean up scorer cache now that the job succeeded
         for m in SCORERS:
-            try: _scorer_cache_path(cache_dir, job_id, m).unlink(missing_ok=True)
-            except Exception: pass
-        try: _scorer_cache_path(cache_dir, job_id, f"{SYNTHESIZER}__synthesis").unlink(missing_ok=True)
-        except Exception: pass
+            try:
+                _scorer_cache_path(cache_dir, job_id, m).unlink(missing_ok=True)
+            except Exception:
+                pass
+        try:
+            _scorer_cache_path(cache_dir, job_id, f"{SYNTHESIZER}__synthesis").unlink(missing_ok=True)
+        except Exception:
+            pass
         return idx, row, "ok"
     except Exception as e:
         log(f"[ensemble-batch] {job_label} | error: {e}")
         row = {
-            "provider": provider, "source_key": source_key, "job_id": job_id,
-            "title": title, "status": "error", "score": 0, "verdict": "no",
+            "provider": provider,
+            "source_key": source_key,
+            "job_id": job_id,
+            "title": title,
+            "status": "error",
+            "score": 0,
+            "verdict": "no",
             "error": str(e)[:300],
         }
         return idx, row, "error"
@@ -572,7 +653,7 @@ def process_batch(input_file, output_file, profile_text, profile_data=None, pipe
     cache_dir = Path(input_file).parent / ".scorer_cache"
 
     with open(input_file, encoding="utf-8") as f:
-        lines = [l.strip() for l in f if l.strip()]
+        lines = [line.strip() for line in f if line.strip()]
 
     total = len(lines)
     concurrency = max(1, min(MAX_JOB_CONCURRENCY, total))
@@ -586,9 +667,7 @@ def process_batch(input_file, output_file, profile_text, profile_data=None, pipe
     if concurrency == 1:
         # Single-job path: avoids ThreadPoolExecutor overhead for the common case
         for idx, line in enumerate(lines):
-            _, row, status = _process_one_job(
-                idx, line, profile_text, profile_data, pipeline_tag, cache_dir
-            )
+            _, row, status = _process_one_job(idx, line, profile_text, profile_data, pipeline_tag, cache_dir)
             ordered_rows[idx] = row
             if status == "ok":
                 succeeded += 1
@@ -597,7 +676,9 @@ def process_batch(input_file, output_file, profile_text, profile_data=None, pipe
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
             futures = {
-                pool.submit(_process_one_job, idx, line, profile_text, profile_data, pipeline_tag, cache_dir): idx
+                pool.submit(
+                    _process_one_job, idx, line, profile_text, profile_data, pipeline_tag, cache_dir
+                ): idx
                 for idx, line in enumerate(lines)
             }
             for future in concurrent.futures.as_completed(futures):
@@ -623,21 +704,29 @@ def main():
     parser.add_argument("--jobs-jsonl", required=True)
     parser.add_argument("--results-jsonl", required=True)
     parser.add_argument("--profile-dir", default=DEFAULT_PROFILE_DIR)
-    parser.add_argument("--pipeline", default="ensemble", help="Pipeline tag written to output (default: ensemble)")
+    parser.add_argument(
+        "--pipeline", default="ensemble", help="Pipeline tag written to output (default: ensemble)"
+    )
     args = parser.parse_args()
 
     if not API_KEY:
         print("❌ NVIDIA_API_KEY not set", file=sys.stderr)
         sys.exit(1)
 
-    print(f"📁 Loading profile files…")
+    print("📁 Loading profile files…")
     profile_data = load_profile(args.profile_dir)
     profile_text = build_profile_text(profile_data)
 
     print(f"📚 Ensemble batch: {args.jobs_jsonl}")
     print(f"🧠 Scorers: {', '.join(s.split('/')[-1] for s in SCORERS)} → {SYNTHESIZER.split('/')[-1]}")
 
-    summary = process_batch(args.jobs_jsonl, args.results_jsonl, profile_text, profile_data=profile_data, pipeline_tag=args.pipeline)
+    summary = process_batch(
+        args.jobs_jsonl,
+        args.results_jsonl,
+        profile_text,
+        profile_data=profile_data,
+        pipeline_tag=args.pipeline,
+    )
     print(json.dumps(summary, ensure_ascii=False))
 
 
