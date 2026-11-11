@@ -126,6 +126,22 @@ crawler-test: _crawler-image
     docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{crawler_dir}}:/app" -w /app {{crawler_image}} \
         python -m pytest --cov=. --cov-report=term-missing
 
+# A sleeping machine pauses the crawl, so both variants below block sleep.
+# Full crawl with compose defaults, under caffeinate (run plugged in)
+[macos]
+crawl:
+    caffeinate -is docker compose run --rm crawler
+
+# Full crawl with compose defaults, under systemd-inhibit when available
+[linux]
+crawl:
+    if command -v systemd-inhibit >/dev/null 2>&1; then \
+        systemd-inhibit --what=sleep:idle --who=job-crawler --why="crawl running" \
+            docker compose run --rm crawler; \
+    else \
+        docker compose run --rm crawler; \
+    fi
+
 # Lint the viewer backend, the matcher service, the scheduler service, and the crawler
 lint-all: lint matcher-lint scheduler-lint crawler-lint
 

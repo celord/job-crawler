@@ -264,7 +264,7 @@ async def test_progress_payload_shape_matches_viewer_contract(tmp_path, monkeypa
     }
     assert payload["event"] == "done"
     provider_entry = payload["by_provider"]["lever"]
-    assert set(provider_entry.keys()) == {"done", "total", "skipped", "jobs", "failed"}
+    assert set(provider_entry.keys()) == {"done", "total", "skipped", "jobs", "failed", "timing"}
 
 
 @pytest.mark.asyncio
@@ -419,3 +419,47 @@ async def test_empty_source_list_does_not_wipe_existing_catalog(tmp_path):
         .fetchone()[0]
     )
     assert rows == 1
+
+
+@pytest.mark.asyncio
+async def test_progress_reports_per_provider_timing(tmp_path, monkeypatch):
+    import httpx
+
+    (tmp_path / "sources").mkdir()
+    _write_source_file(tmp_path / "sources", "lever", [{"identifier": "a"}, {"identifier": "b"}])
+    _write_source_file(tmp_path / "sources", "greenhouse", [{"identifier": "c"}])
+
+    clock = {"now": 0.0}
+
+    async def fake_request(self, method, url, **kwargs):
+        clock["now"] += 0.5  # one round trip
+        return httpx.Response(200, json={}, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    monkeypatch.setattr("http_client._clock", lambda: clock["now"])
+    monkeypatch.setattr("runner._clock", lambda: clock["now"])
+
+    async def lever_crawl(source, context):
+        await context.http.get_json(f"https://api.lever.co/{source.identifier}")
+        clock["now"] += 0.25  # parsing
+        return []
+
+    async def greenhouse_crawl(source, context):
+        return []  # no HTTP: nothing may leak in from lever's requests
+
+    monkeypatch.setitem(runner_module.CRAWLER_BY_PROVIDER, "lever", _FakeCrawler(lever_crawl))
+    monkeypatch.setitem(runner_module.CRAWLER_BY_PROVIDER, "greenhouse", _FakeCrawler(greenhouse_crawl))
+
+    options = _options(tmp_path, providers="lever,greenhouse", concurrency=1)
+    await runner_module.run_crawler(options)
+
+    by_provider = json.loads(Path(options.progress_file).read_text())["by_provider"]
+    lever = by_provider["lever"]["timing"]
+    assert lever["network_s"] == pytest.approx(1.0)  # 2 sources x 0.5 s
+    assert lever["fetch_s"] == pytest.approx(1.5)  # network + 2 x 0.25 s parsing
+    assert lever["jitter_s"] == 0
+    assert lever["backoff_s"] == 0
+    assert set(lever) == {"queue_s", "fetch_s", "network_s", "jitter_s", "backoff_s", "db_s"}
+    greenhouse = by_provider["greenhouse"]["timing"]
+    assert greenhouse["network_s"] == 0
+    assert greenhouse["fetch_s"] == 0

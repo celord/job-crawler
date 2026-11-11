@@ -33,6 +33,25 @@ def test_run_crawler_success_records_run_and_does_not_notify(monkeypatch, runs_f
     assert len(state.read_runs()) == 1
 
 
+def test_run_crawler_sets_pwd_to_project_dir_for_compose_interpolation(monkeypatch, runs_file):
+    # docker-compose.yml interpolates ${PWD}; exec-form containers have no PWD.
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.delenv("PWD", raising=False)
+    monkeypatch.setenv("SOME_VAR", "kept")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(crawler, "send_failure_notification", lambda msg: None)
+
+    crawler.run_crawler()
+
+    assert captured["env"]["PWD"] == config.PROJECT_DIR
+    assert captured["env"]["SOME_VAR"] == "kept"
+
+
 def test_run_crawler_failure_logs_and_notifies_but_still_records_run(monkeypatch, runs_file):
     def fake_run(cmd, **kwargs):
         raise subprocess.CalledProcessError(returncode=1, cmd=cmd, stderr="boom: stack trace")

@@ -40,7 +40,7 @@ from catalog_store import CatalogStore
 from config import CliOptions
 from dead_slugs import load_dead_slugs, mark_dead
 from exclusions import is_excluded, load_excluded_sources
-from http_client import HttpClient, HttpError
+from http_client import HttpClient, HttpError, RequestTimings
 from models import (
     PROVIDERS,
     CrawlContext,
@@ -167,18 +167,34 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
                     cursor_state["completed"] += 1
                     continue
 
+                provider_stats = stats[item.provider]
                 try:
+                    queued_at = _clock()
                     async with provider_semaphores[item.provider]:
+                        provider_stats.queue_s += _clock() - queued_at
+                        timings = RequestTimings()
+                        base_http = http_with_jitter if item.provider in HTML_SCRAPING_PROVIDERS else http
                         context = CrawlContext(
-                            http=http_with_jitter if item.provider in HTML_SCRAPING_PROVIDERS else http,
+                            http=base_http.with_timings(timings),
                             fetched_at=_now_iso(),
                             max_jobs_per_source=options.max_jobs_per_source,
                             url_template=item.url_template,
                             jobid_template=item.jobid_template,
                         )
-                        jobs = await crawler.crawl(item.source, context)
+                        fetch_started = _clock()
+                        try:
+                            jobs = await crawler.crawl(item.source, context)
+                        finally:
+                            provider_stats.fetch_s += _clock() - fetch_started
+                            provider_stats.network_s += timings.network_s
+                            provider_stats.jitter_s += timings.jitter_s
+                            provider_stats.backoff_s += timings.backoff_s
 
-                    catalog_store.record_jobs(jobs, started_at)
+                    db_started = _clock()
+                    try:
+                        catalog_store.record_jobs(jobs, started_at)
+                    finally:
+                        provider_stats.db_s += _clock() - db_started
 
                     emitted = 0
                     for job in jobs:
@@ -367,6 +383,14 @@ def _emit_progress(
             "skipped": s.skipped,
             "jobs": s.jobs,
             "failed": s.failed,
+            "timing": {
+                "queue_s": round(s.queue_s, 1),
+                "fetch_s": round(s.fetch_s, 1),
+                "network_s": round(s.network_s, 1),
+                "jitter_s": round(s.jitter_s, 1),
+                "backoff_s": round(s.backoff_s, 1),
+                "db_s": round(s.db_s, 1),
+            },
         }
 
     payload = {
@@ -393,6 +417,10 @@ def _emit_progress(
 
 def _js_round(x: float) -> int:
     return math.floor(x + 0.5)
+
+
+def _clock() -> float:
+    return time.monotonic()
 
 
 def _now_iso() -> str:
