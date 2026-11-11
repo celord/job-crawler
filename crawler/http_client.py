@@ -7,6 +7,8 @@ mechanics change shape (httpx.AsyncClient instead of fetch/AbortController).
 
 import asyncio
 import random
+import time
+from dataclasses import dataclass
 
 import httpx
 
@@ -26,6 +28,16 @@ USER_AGENTS = [
     "Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",
     "Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0",
 ]
+
+
+@dataclass
+class RequestTimings:
+    """Seconds spent waiting, split by cause. Sleeps count their requested
+    duration; network time is measured around each round trip."""
+
+    network_s: float = 0.0
+    jitter_s: float = 0.0
+    backoff_s: float = 0.0
 
 
 class HttpError(Exception):
@@ -57,36 +69,59 @@ class HttpClient:
         timeout_s: float,
         retries: int,
         jitter_ms: tuple[int, int] | None = None,
+        timings: RequestTimings | None = None,
     ):
         self._client = client
         self._timeout_s = timeout_s
         self._retries = retries
         self._jitter_ms = jitter_ms
+        self._timings = timings if timings is not None else RequestTimings()
+
+    def with_timings(self, timings: RequestTimings) -> "HttpClient":
+        """Same configuration and connection pool, recording into `timings`."""
+        return HttpClient(
+            self._client,
+            timeout_s=self._timeout_s,
+            retries=self._retries,
+            jitter_ms=self._jitter_ms,
+            timings=timings,
+        )
+
+    async def _backoff(self, attempt: int) -> None:
+        seconds = _backoff_s(attempt)
+        self._timings.backoff_s += seconds
+        await _sleep_s(seconds)
 
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
         if self._jitter_ms:
             lo, hi = self._jitter_ms
-            await _sleep_s((lo + random.random() * (hi - lo)) / 1000)
+            seconds = (lo + random.random() * (hi - lo)) / 1000
+            self._timings.jitter_s += seconds
+            await _sleep_s(seconds)
 
         last_error: Exception | None = None
         for attempt in range(self._retries + 1):
             headers = {"User-Agent": _random_ua(), **kwargs.pop("headers", {})}
+            sent_at = _clock()
             try:
                 response = await self._client.request(
                     method, url, timeout=self._timeout_s, headers=headers, **kwargs
                 )
             except httpx.TimeoutException as exc:
+                self._timings.network_s += _clock() - sent_at
                 last_error = exc
                 if attempt >= self._retries:
                     raise TimeoutError(f"Timeout while fetching {url}") from exc
-                await _sleep_s(_backoff_s(attempt))
+                await self._backoff(attempt)
                 continue
             except httpx.HTTPError as exc:
+                self._timings.network_s += _clock() - sent_at
                 last_error = exc
                 if attempt >= self._retries:
                     raise
-                await _sleep_s(_backoff_s(attempt))
+                await self._backoff(attempt)
                 continue
+            self._timings.network_s += _clock() - sent_at
 
             if response.status_code >= 400:
                 body = ""
@@ -96,7 +131,7 @@ class HttpClient:
                     pass
                 error = HttpError(f"HTTP {response.status_code} for {url}", response.status_code, body)
                 if attempt < self._retries and response.status_code in TRANSIENT_STATUSES:
-                    await _sleep_s(_backoff_s(attempt))
+                    await self._backoff(attempt)
                     continue
                 raise error
 
@@ -120,6 +155,10 @@ class HttpClient:
     async def get_text(self, url: str, **kwargs) -> str:
         response = await self._request("GET", url, **kwargs)
         return response.text
+
+
+def _clock() -> float:
+    return time.monotonic()
 
 
 async def _sleep_s(seconds: float) -> None:

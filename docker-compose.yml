@@ -71,7 +71,10 @@ services:
       - TZ=${TZ:-America/New_York}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - .:/project:ro
+      # Same path as on the host: the docker CLI in this container reads the
+      # compose file and .env at PROJECT_DIR, and the host daemon resolves the
+      # crawler's bind mounts against that same path.
+      - .:${PWD}:ro
       - ./crawler/state:/state
     restart: unless-stopped
 

@@ -192,3 +192,31 @@ async def test_user_agent_header_is_set_from_rotation_list(async_client, monkeyp
     client = HttpClient(async_client, timeout_s=5, retries=0)
     await client.get_json("http://example.com")
     assert captured["ua"] in USER_AGENTS
+
+
+@pytest.mark.asyncio
+async def test_timings_record_network_jitter_and_backoff_separately(async_client, monkeypatch):
+    from http_client import RequestTimings
+
+    clock = {"now": 100.0}
+    responses = [_response(503), httpx.Response(200, json={}, request=httpx.Request("GET", "http://x/"))]
+
+    async def fake_request(self, method, url, **kwargs):
+        clock["now"] += 0.5  # each round trip takes 0.5 s on the fake clock
+        return responses.pop(0)
+
+    async def recording_sleep(seconds):
+        return None
+
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    monkeypatch.setattr("http_client._sleep_s", recording_sleep)
+    monkeypatch.setattr("http_client._clock", lambda: clock["now"])
+    monkeypatch.setattr("http_client.random.random", lambda: 0.5)
+
+    timings = RequestTimings()
+    client = HttpClient(async_client, timeout_s=5, retries=2, jitter_ms=(300, 1200), timings=timings)
+    await client.get_json("http://example.com")
+
+    assert timings.network_s == pytest.approx(1.0)  # two round trips
+    assert timings.jitter_s == pytest.approx(0.75)  # 300 + 0.5 * 900 ms, once
+    assert timings.backoff_s == pytest.approx(0.25)  # attempt 0: 250 ms * (0.8 + 0.5 * 0.4)

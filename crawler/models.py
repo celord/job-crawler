@@ -101,6 +101,13 @@ class ProviderStats:
     succeeded: int = 0
     failed: int = 0
     jobs: int = 0
+    # Seconds summed over this provider's sources (overlapping under concurrency).
+    queue_s: float = 0.0
+    fetch_s: float = 0.0
+    network_s: float = 0.0
+    jitter_s: float = 0.0
+    backoff_s: float = 0.0
+    db_s: float = 0.0
 
 
 @dataclass

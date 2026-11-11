@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 from datetime import UTC, datetime
 
@@ -8,9 +9,9 @@ from notifications import send_failure_notification
 
 logger = logging.getLogger(__name__)
 
-# Crawls can legitimately run long (thousands of ATS pages); this bounds a
-# genuinely hung run without cutting off a slow-but-healthy one.
-CRAWLER_TIMEOUT_S = 3600
+# Crawls can legitimately run long: a full crawl of every source takes about
+# 2.5 hours. This bounds a genuinely hung run without cutting off a healthy one.
+CRAWLER_TIMEOUT_S = 4 * 3600
 
 
 def run_crawler() -> None:
@@ -30,6 +31,9 @@ def run_crawler() -> None:
                 "--rm",
                 config.CRAWLER_SERVICE_NAME,
             ],
+            # docker-compose.yml interpolates ${PWD}, which this exec-form
+            # container does not set; point it at the host project dir.
+            env={**os.environ, "PWD": config.PROJECT_DIR},
             capture_output=True,
             text=True,
             timeout=CRAWLER_TIMEOUT_S,

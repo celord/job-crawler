@@ -126,6 +126,11 @@ crawler-test: _crawler-image
     docker run --rm -u {{uid}}:{{gid}} -v "$(pwd)/{{crawler_dir}}:/app" -w /app {{crawler_image}} \
         python -m pytest --cov=. --cov-report=term-missing
 
+# Run a full crawl with the compose defaults, keeping macOS awake until it ends
+# (a sleeping Mac pauses the crawl). Run it plugged in.
+crawl:
+    caffeinate -is docker compose run --rm crawler
+
 # Lint the viewer backend, the matcher service, the scheduler service, and the crawler
 lint-all: lint matcher-lint scheduler-lint crawler-lint
 
