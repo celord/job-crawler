@@ -1,3 +1,7 @@
+import asyncio
+import os
+import time
+
 import pytest
 
 import main as main_module
@@ -178,3 +182,75 @@ async def test_success_prints_summary_matching_report_fields(tmp_path, monkeypat
     assert summary["total_jobs"] == 3
     assert summary["failures"] == 0
     assert summary["started_at"] == "2026-01-01T00:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_refuses_to_start_while_another_crawl_holds_a_fresh_lock(tmp_path, monkeypatch):
+    lock_path = tmp_path / "state" / "crawler-active.lock"
+    progress_path = tmp_path / "state" / "progress.json"
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text("2026-01-01T00:00:00Z")
+    progress_path.write_text('{"other": "crawl"}')
+    monkeypatch.setenv("CRAWLER_ACTIVE_LOCK_PATH", str(lock_path))
+    crawled = {"v": False}
+
+    async def fake_run_crawler(options):
+        crawled["v"] = True
+        return _fake_report()
+
+    monkeypatch.setattr(main_module, "run_crawler", fake_run_crawler)
+    monkeypatch.setattr("sys.argv", _argv(tmp_path, progress_path))
+
+    exit_code = await main_module.main()
+
+    assert exit_code != 0
+    assert crawled["v"] is False
+    # The running crawl's lock and progress file belong to it; leave them alone.
+    assert lock_path.read_text() == "2026-01-01T00:00:00Z"
+    assert progress_path.read_text() == '{"other": "crawl"}'
+
+
+@pytest.mark.asyncio
+async def test_takes_over_a_lock_left_behind_by_a_crashed_crawl(tmp_path, monkeypatch):
+    lock_path = tmp_path / "state" / "crawler-active.lock"
+    lock_path.parent.mkdir(parents=True)
+    lock_path.write_text("2026-01-01T00:00:00Z")
+    eleven_minutes_ago = time.time() - 11 * 60
+    os.utime(lock_path, (eleven_minutes_ago, eleven_minutes_ago))
+    monkeypatch.setenv("CRAWLER_ACTIVE_LOCK_PATH", str(lock_path))
+
+    async def fake_run_crawler(options):
+        return _fake_report()
+
+    monkeypatch.setattr(main_module, "run_crawler", fake_run_crawler)
+    monkeypatch.setattr(main_module.post_crawl, "run", lambda *a, **k: 0)
+    monkeypatch.setattr(main_module, "append_trend_entry", lambda *a, **k: None)
+    monkeypatch.setattr("sys.argv", _argv(tmp_path))
+
+    exit_code = await main_module.main()
+
+    assert exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_running_crawl_keeps_its_lock_fresh(tmp_path, monkeypatch):
+    lock_path = tmp_path / "state" / "crawler-active.lock"
+    monkeypatch.setenv("CRAWLER_ACTIVE_LOCK_PATH", str(lock_path))
+    monkeypatch.setattr(main_module, "LOCK_HEARTBEAT_S", 0.01)
+    lock_age_s = {}
+
+    async def fake_run_crawler(options):
+        an_hour_ago = time.time() - 3600
+        os.utime(lock_path, (an_hour_ago, an_hour_ago))
+        await asyncio.sleep(0.1)
+        lock_age_s["v"] = time.time() - lock_path.stat().st_mtime
+        return _fake_report()
+
+    monkeypatch.setattr(main_module, "run_crawler", fake_run_crawler)
+    monkeypatch.setattr(main_module.post_crawl, "run", lambda *a, **k: 0)
+    monkeypatch.setattr(main_module, "append_trend_entry", lambda *a, **k: None)
+    monkeypatch.setattr("sys.argv", _argv(tmp_path))
+
+    await main_module.main()
+
+    assert lock_age_s["v"] < 60

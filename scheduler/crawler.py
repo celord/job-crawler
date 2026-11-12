@@ -14,7 +14,39 @@ logger = logging.getLogger(__name__)
 CRAWLER_TIMEOUT_S = 4 * 3600
 
 
+def _crawler_container_running() -> bool:
+    """True when any crawler container of this project is up, scheduled or manual.
+
+    Two crawls writing catalog.sqlite at once have corrupted it. If docker
+    can't answer, go ahead: the crawler's own lock check is the second guard.
+    """
+    project = os.path.basename(config.PROJECT_DIR.rstrip("/")).lower()
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project={project}",
+                "--filter",
+                f"label=com.docker.compose.service={config.CRAWLER_SERVICE_NAME}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.warning("Could not check for a running crawler: %s", exc)
+        return False
+    return bool(result.stdout.strip())
+
+
 def run_crawler() -> None:
+    if _crawler_container_running():
+        logger.info("Skipping run: a crawler container is already running")
+        return
     logger.info("Triggering crawler...")
     now_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
