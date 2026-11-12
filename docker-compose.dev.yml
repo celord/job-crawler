@@ -22,9 +22,11 @@ services:
     volumes:
       - ./viewer/backend:/app
       - ./crawler/state:/app/state
+      - catalog:/app/catalog
       - ./viewer/frontend/public:/app/static:ro
     environment:
-      CATALOG_DB: /app/state/catalog.sqlite
+      CATALOG_DB: /app/catalog/catalog.sqlite
+      STATE_DIR: /app/state
       STATIC_DIR: /app/static
       SAVED_SEARCHES_PATH: /app/static/saved-searches.json
       MATCHER_SERVICE_URL: http://matcher:8001
@@ -64,3 +66,4 @@ services:
 
 volumes:
   viewer_frontend_node_modules:
+  catalog:

@@ -254,3 +254,28 @@ async def test_running_crawl_keeps_its_lock_fresh(tmp_path, monkeypatch):
     await main_module.main()
 
     assert lock_age_s["v"] < 60
+
+
+@pytest.mark.asyncio
+async def test_state_files_go_to_state_dir_when_the_catalog_lives_elsewhere(tmp_path, monkeypatch):
+    # The catalog sits on its own Docker volume; exclude.jsonl and trends.jsonl
+    # stay in the shared state dir the viewer reads.
+    state_dir = tmp_path / "shared-state"
+    monkeypatch.setenv("STATE_DIR", str(state_dir))
+    monkeypatch.setenv("CRAWLER_ACTIVE_LOCK_PATH", str(tmp_path / "lock"))
+    written = {}
+
+    async def fake_run_crawler(options):
+        return _fake_report()
+
+    monkeypatch.setattr(main_module, "run_crawler", fake_run_crawler)
+    monkeypatch.setattr(
+        main_module.post_crawl, "run", lambda report, exclude: written.update(exclude=exclude)
+    )
+    monkeypatch.setattr(main_module, "append_trend_entry", lambda db, state: written.update(trends_dir=state))
+    monkeypatch.setattr("sys.argv", _argv(tmp_path))
+
+    await main_module.main()
+
+    assert written["exclude"] == str(state_dir / "exclude.jsonl")
+    assert written["trends_dir"] == str(state_dir)

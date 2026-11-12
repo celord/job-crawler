@@ -45,8 +45,10 @@ services:
       - "3000:3000"
     volumes:
       - ./crawler/state:/app/state
+      - catalog:/app/catalog
     environment:
-      CATALOG_DB: /app/state/catalog.sqlite
+      CATALOG_DB: /app/catalog/catalog.sqlite
+      STATE_DIR: /app/state
       LOCATION_FILTERS: ${LOCATION_FILTERS:-Costa Rica,Latam,USA}
       # The production image copies frontend/dist to ./static (WORKDIR
       # /app), not to a frontend/ sibling of backend/ — config.py's
@@ -85,6 +87,9 @@ services:
       - ./sources:/data/sources:ro
       - ./crawler/output:/app/output
       - ./crawler/state:/app/state
+      - catalog:/app/catalog
+    environment:
+      STATE_DIR: /app/state
     command:
       - --concurrency
       - "12"
@@ -97,4 +102,10 @@ services:
       - --exclude-sources
       - /app/state/exclude.jsonl
       - --catalog-db
-      - /app/state/catalog.sqlite
+      - /app/catalog/catalog.sqlite
+
+# SQLite catalog on a Docker volume, not the macOS-shared crawler/state folder:
+# crawler and viewer writing it through Docker Desktop file sharing corrupted it.
+# Copy it out with `just catalog-backup`.
+volumes:
+  catalog:

@@ -74,7 +74,9 @@ async def main() -> int:
     if report is None:
         return 1
 
-    exclude_path = str(Path(options.catalog_db).parent / "exclude.jsonl")
+    # The catalog can live on its own volume; shared state files stay in STATE_DIR.
+    state_dir = os.environ.get("STATE_DIR", str(Path(options.catalog_db).parent))
+    exclude_path = str(Path(state_dir) / "exclude.jsonl")
     try:
         post_crawl.run(options.report, exclude_path)
     except Exception as error:  # noqa: BLE001
@@ -82,7 +84,7 @@ async def main() -> int:
         return 1
 
     try:
-        append_trend_entry(options.catalog_db, str(Path(options.catalog_db).parent))
+        append_trend_entry(options.catalog_db, state_dir)
     except Exception as error:  # noqa: BLE001 -- non-fatal, matches cli.ts's swallowed catch
         print(f"[trend-log] failed: {error}", file=sys.stderr)
 
