@@ -41,9 +41,11 @@ dev: _viewer-image
     docker run --rm -it \
         -v "$(pwd)/{{viewer_backend}}:/app" \
         -v "$(pwd)/crawler/state:/app/state" \
+        -v job-crawler_catalog:/app/catalog \
         -v "$(pwd)/matcher:/matcher:ro" \
         -p 3000:3000 \
-        -e CATALOG_DB=/app/state/catalog.sqlite \
+        -e CATALOG_DB=/app/catalog/catalog.sqlite \
+        -e STATE_DIR=/app/state \
         -e CAREER_OPS_DIR="${CAREER_OPS_DIR:-career-ops}" \
         -e LOGO_DEV_PUBLISHABLE_KEY="${LOGO_DEV_PUBLISHABLE_KEY:-}" \
         -e LOGO_DEV_SECRET_KEY="${LOGO_DEV_SECRET_KEY:-}" \
@@ -147,3 +149,8 @@ lint-all: lint matcher-lint scheduler-lint crawler-lint
 
 # Run the viewer backend, matcher, scheduler, and crawler test suites
 test-all: test matcher-test scheduler-test crawler-test
+
+# Copy the catalog out of its Docker volume to crawler/state/catalog-backup.sqlite (safe while in use)
+catalog-backup:
+    docker run --rm -v job-crawler_catalog:/catalog -v "$(pwd)/crawler/state:/out" alpine:3.20 \
+        sh -c "apk add -q sqlite && sqlite3 /catalog/catalog.sqlite \".backup /out/catalog-backup.sqlite\""
