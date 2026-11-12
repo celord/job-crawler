@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,16 +24,42 @@ from config import parse_args
 from runner import run_crawler
 from trend_log import append_trend_entry
 
+LOCK_HEARTBEAT_S = 60
+# A lock this old was left behind by a crawl that died without cleaning up.
+LOCK_STALE_S = 10 * 60
+
 
 def _lock_path() -> str:
     return os.environ.get("CRAWLER_ACTIVE_LOCK_PATH", "/app/state/crawler-active.lock")
 
 
+def _write_lock(lock_path: Path) -> None:
+    lock_path.write_text(datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), encoding="utf-8")
+
+
+def _held_by_another_crawl(lock_path: Path) -> bool:
+    try:
+        return time.time() - lock_path.stat().st_mtime < LOCK_STALE_S
+    except FileNotFoundError:
+        return False
+
+
+async def _keep_lock_fresh(lock_path: Path) -> None:
+    while True:
+        await asyncio.sleep(LOCK_HEARTBEAT_S)
+        _write_lock(lock_path)
+
+
 async def main() -> int:
     options = parse_args(sys.argv[1:])
     lock_path = Path(_lock_path())
+    # Two crawls writing catalog.sqlite at once have corrupted it before.
+    if _held_by_another_crawl(lock_path):
+        print(f"Another crawl is running ({lock_path} is fresh); not starting.", file=sys.stderr)
+        return 1
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path.write_text(datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), encoding="utf-8")
+    _write_lock(lock_path)
+    heartbeat = asyncio.create_task(_keep_lock_fresh(lock_path))
 
     report = None
     try:
@@ -40,6 +67,7 @@ async def main() -> int:
     except Exception as error:  # noqa: BLE001 -- top-level crawl failure, reported then exits non-zero
         print(str(error), file=sys.stderr)
     finally:
+        heartbeat.cancel()
         lock_path.unlink(missing_ok=True)
         Path(options.progress_file).unlink(missing_ok=True)
 

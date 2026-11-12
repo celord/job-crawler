@@ -10,7 +10,8 @@ def test_run_crawler_success_records_run_and_does_not_notify(monkeypatch, runs_f
 
     def fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
-        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+        stdout = "" if cmd[:2] == ["docker", "ps"] else "ok"
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
 
     notified = []
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -94,3 +95,27 @@ def test_run_crawler_missing_docker_binary_is_caught_and_notifies(monkeypatch, r
     assert len(notified) == 1
     assert "Could not invoke docker" in notified[0]
     assert len(state.read_runs()) == 1
+
+
+def test_run_crawler_skips_while_a_crawler_container_is_already_running(monkeypatch, runs_file):
+    # A manual `docker compose run crawler` writing the catalog at the same time
+    # as a scheduled one corrupted catalog.sqlite; never start a second crawl.
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="3f2a9c1b\n", stderr="")
+
+    notified = []
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(crawler, "send_failure_notification", lambda msg: notified.append(msg))
+
+    crawler.run_crawler()
+
+    assert len(calls) == 1
+    assert calls[0][:2] == ["docker", "ps"]
+    assert "label=com.docker.compose.service=crawler" in calls[0]
+    assert "label=com.docker.compose.project=project" in calls[0]
+    assert notified == []
+    # Skipped, not run: the next tick should try again rather than be debounced.
+    assert state.read_runs() == []
