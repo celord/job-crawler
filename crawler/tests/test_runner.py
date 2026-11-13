@@ -8,7 +8,7 @@ import pytest
 import runner as runner_module
 from config import CliOptions
 from http_client import HttpError
-from models import NormalizedJob, SourceEntry
+from models import NormalizedJob
 
 
 def _write_source_file(sources_dir: Path, provider: str, companies: list[dict], **extra):
@@ -326,18 +326,6 @@ async def test_periodic_progress_events_are_written_and_cleaned_up(tmp_path, mon
     assert payload["event"] == "done"
 
 
-def test_interleave_work_items_round_robins_across_providers():
-    items_by_provider = {
-        "lever": [
-            runner_module.WorkItem(provider="lever", source=SourceEntry(identifier="l1")),
-            runner_module.WorkItem(provider="lever", source=SourceEntry(identifier="l2")),
-        ],
-        "ashby": [runner_module.WorkItem(provider="ashby", source=SourceEntry(identifier="a1"))],
-    }
-    result = runner_module._interleave_work_items(["lever", "ashby"], items_by_provider)
-    assert [item.source.identifier for item in result] == ["l1", "a1", "l2"]
-
-
 @pytest.mark.asyncio
 async def test_per_provider_concurrency_cap_enforced(tmp_path, monkeypatch):
     (tmp_path / "sources").mkdir()
@@ -463,3 +451,67 @@ async def test_progress_reports_per_provider_timing(tmp_path, monkeypatch):
     greenhouse = by_provider["greenhouse"]["timing"]
     assert greenhouse["network_s"] == 0
     assert greenhouse["fetch_s"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_provider_at_its_cap_does_not_hold_back_other_providers(tmp_path, monkeypatch):
+    # A full crawl ran ~3h because workers sat waiting on bamboohr's cap while
+    # greenhouse, with free capacity, advanced at bamboohr's pace.
+    (tmp_path / "sources").mkdir()
+    _write_source_file(tmp_path / "sources", "bamboohr", [{"identifier": f"b{i}"} for i in range(4)])
+    _write_source_file(tmp_path / "sources", "greenhouse", [{"identifier": f"g{i}"} for i in range(4)])
+    events = []
+
+    def fake(provider, seconds):
+        async def crawl(source, context):
+            events.append(("start", source.identifier))
+            await asyncio.sleep(seconds)
+            events.append(("end", source.identifier))
+            return []
+
+        return _FakeCrawler(crawl)
+
+    monkeypatch.setitem(runner_module.CRAWLER_BY_PROVIDER, "bamboohr", fake("bamboohr", 0.05))
+    monkeypatch.setitem(runner_module.CRAWLER_BY_PROVIDER, "greenhouse", fake("greenhouse", 0))
+
+    options = _options(
+        tmp_path,
+        providers="bamboohr,greenhouse",
+        concurrency=2,
+        provider_concurrency={"bamboohr": 1, "greenhouse": 2},
+    )
+    report = await runner_module.run_crawler(options)
+
+    assert report.providers["bamboohr"].succeeded == 4
+    assert report.providers["greenhouse"].succeeded == 4
+    last_greenhouse_end = max(i for i, e in enumerate(events) if e[0] == "end" and e[1].startswith("g"))
+    second_bamboohr_start = [i for i, e in enumerate(events) if e[0] == "start" and e[1].startswith("b")][1]
+    assert last_greenhouse_end < second_bamboohr_start
+
+
+@pytest.mark.asyncio
+async def test_global_concurrency_still_caps_requests_in_flight(tmp_path, monkeypatch):
+    (tmp_path / "sources").mkdir()
+    _write_source_file(tmp_path / "sources", "lever", [{"identifier": f"l{i}"} for i in range(6)])
+    _write_source_file(tmp_path / "sources", "greenhouse", [{"identifier": f"g{i}"} for i in range(6)])
+    in_flight = {"now": 0, "max": 0}
+
+    async def crawl(source, context):
+        in_flight["now"] += 1
+        in_flight["max"] = max(in_flight["max"], in_flight["now"])
+        await asyncio.sleep(0.01)
+        in_flight["now"] -= 1
+        return []
+
+    monkeypatch.setitem(runner_module.CRAWLER_BY_PROVIDER, "lever", _FakeCrawler(crawl))
+    monkeypatch.setitem(runner_module.CRAWLER_BY_PROVIDER, "greenhouse", _FakeCrawler(crawl))
+
+    options = _options(
+        tmp_path,
+        providers="lever,greenhouse",
+        concurrency=3,
+        provider_concurrency={"lever": 3, "greenhouse": 3},
+    )
+    await runner_module.run_crawler(options)
+
+    assert in_flight["max"] == 3
