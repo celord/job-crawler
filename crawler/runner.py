@@ -1,12 +1,11 @@
 """Crawl orchestration. Ported from crawler/src/runner.ts.
 
-Concurrency model: a global pool of `worker_count` asyncio tasks share a
-single mutable cursor index over an interleaved work-item list (a
-work-stealing pattern -- a worker that finishes early immediately claims
-the next unclaimed item, rather than each worker owning a pre-partitioned
-slice). A per-provider asyncio.Semaphore (replacing the TS Limiter class)
-enforces --provider-concurrency caps *inside* each worker's per-item task,
-composing with the global pool.
+Concurrency model: each provider has its own work list and its own pool of
+workers, sized to its --provider-concurrency cap (and never more than
+--concurrency). A global asyncio.Semaphore of --concurrency slots bounds the
+crawls in flight across all providers. A provider at its cap therefore never
+ties up a worker another provider could use: with one shared queue, workers
+sat waiting on bamboohr's cap while greenhouse advanced at bamboohr's pace.
 
 Two optional/omittable NormalizedJob fields need special handling versus
 plain dataclass serialization, matching JS's undefined-drops-the-key
@@ -29,6 +28,7 @@ import json
 import math
 import sys
 import time
+from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -101,7 +101,7 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
             )
         items_by_provider[provider] = provider_items
 
-    items = _interleave_work_items(selected_providers, items_by_provider)
+    total_items = sum(len(provider_items) for provider_items in items_by_provider.values())
 
     Path(options.out).parent.mkdir(parents=True, exist_ok=True)
     Path(options.report).parent.mkdir(parents=True, exist_ok=True)
@@ -111,20 +111,10 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
     min_updated_at_ms = (
         None if options.max_age_hours is None else time.time() * 1000 - options.max_age_hours * 60 * 60 * 1000
     )
-    provider_semaphores = {
-        p: asyncio.Semaphore(options.provider_concurrency.get(p, _UNLIMITED_CONCURRENCY)) for p in PROVIDERS
-    }
-
-    cursor_lock = asyncio.Lock()
-    cursor_state = {"cursor": 0, "completed": 0}
-
-    async def claim_next() -> WorkItem | None:
-        async with cursor_lock:
-            idx = cursor_state["cursor"]
-            if idx >= len(items):
-                return None
-            cursor_state["cursor"] += 1
-            return items[idx]
+    global_concurrency = max(options.concurrency, 1)
+    global_slots = asyncio.Semaphore(global_concurrency)
+    pending = {p: deque(provider_items) for p, provider_items in items_by_provider.items()}
+    cursor_state = {"completed": 0}
 
     started_ms = time.time() * 1000
 
@@ -133,7 +123,7 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
             event,
             started_ms,
             cursor_state["completed"],
-            len(items),
+            total_items,
             stats,
             len(failures),
             options.progress_file,
@@ -144,8 +134,6 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
             await asyncio.sleep(options.progress_every_ms / 1000)
             log_progress("progress")
 
-    worker_count = min(max(options.concurrency, 1), len(items) or 1)
-
     async with httpx.AsyncClient() as client:
         http = HttpClient(client, timeout_s=options.timeout_ms / 1000, retries=options.retries)
         http_with_jitter = HttpClient(
@@ -153,12 +141,10 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
         )
         jsonl_writer = _JsonlWriter(options.out)
 
-        async def worker() -> None:
-            while True:
-                item = await claim_next()
-                if item is None:
-                    return
-
+        async def worker(provider: Provider) -> None:
+            queue = pending[provider]
+            while queue:
+                item = queue.popleft()
                 key = source_key(item.source)
                 crawler = CRAWLER_BY_PROVIDER.get(item.provider)
                 if crawler is None:
@@ -170,7 +156,7 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
                 provider_stats = stats[item.provider]
                 try:
                     queued_at = _clock()
-                    async with provider_semaphores[item.provider]:
+                    async with global_slots:
                         provider_stats.queue_s += _clock() - queued_at
                         timings = RequestTimings()
                         base_http = http_with_jitter if item.provider in HTML_SCRAPING_PROVIDERS else http
@@ -222,10 +208,14 @@ async def run_crawler(options: CliOptions) -> CrawlReport:
         progress_task = asyncio.create_task(progress_loop()) if options.progress_every_ms > 0 else None
 
         try:
-            if not items:
+            if not total_items:
                 # finalize_run deletes every row from other runs; an empty run would wipe the catalog.
                 raise RuntimeError("no sources loaded; refusing to finalize the run and delete the catalog")
-            await asyncio.gather(*(worker() for _ in range(worker_count)))
+            workers = []
+            for provider, queue in pending.items():
+                cap = options.provider_concurrency.get(provider, _UNLIMITED_CONCURRENCY)
+                workers += [worker(provider) for _ in range(min(cap, global_concurrency, len(queue)))]
+            await asyncio.gather(*workers)
             catalog_store.finalize_run(started_at)
         finally:
             if progress_task is not None:
@@ -338,23 +328,6 @@ def _is_fresh_enough(updated_at: str | None, min_updated_at_ms: float) -> bool:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.timestamp() * 1000 >= min_updated_at_ms
-
-
-def _interleave_work_items(
-    selected_providers: list[Provider], items_by_provider: dict[Provider, list[WorkItem]]
-) -> list[WorkItem]:
-    queues = [{"items": items_by_provider.get(p, []), "index": 0} for p in selected_providers]
-    items: list[WorkItem] = []
-
-    while True:
-        added_any = False
-        for queue in queues:
-            if queue["index"] < len(queue["items"]):
-                items.append(queue["items"][queue["index"]])
-                queue["index"] += 1
-                added_any = True
-        if not added_any:
-            return items
 
 
 def _emit_progress(
