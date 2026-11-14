@@ -36,7 +36,6 @@ services:
     build:
       context: ./viewer
     depends_on:
-      - scheduler
       - matcher
     env_file:
       - path: ./.env
