@@ -173,8 +173,9 @@ HiBob: SPA, not implemented.
 
 ### Quick pipeline (Maverick)
 File: `job_fit_analyzer.py`
-Model: `meta/llama-4-maverick-17b-128e-instruct` (set via `NVIDIA_MODEL` env var)
-Use: default on-demand analysis (~20s)
+Model: `nvidia/nemotron-3-ultra-550b-a55b` (set via `NVIDIA_MODEL` env var)
+Use: default on-demand analysis (~1.5–2min)
+**max_tokens:** 6000 (`QUICK_MODEL_MAX_TOKENS`). Current models write 3–4.5k-token answers; a lower cap truncates the JSON (`Expecting ',' delimiter`).
 
 **Pre-scoring checks injected in `build_system_prompt()`:**
 
@@ -186,14 +187,14 @@ Note: `cache_control: {"type": "ephemeral"}` on system message. Strip this field
 
 ### Full pipeline (Ensemble)
 File: `ensemble_runner.py`
-Scorers (parallel): Maverick + Kimi-K2 + Nemotron-super-49b (thinking=on)
-Synthesizer: Nemotron-super-49b (thinking=on)
-Use: full analysis (~2min)
+Scorers (parallel): nemotron-3-ultra + minimax-m3.1-flash
+Synthesizer: nemotron-3-ultra
+Use: full analysis (~3min)
 
 `_PRE_SCORING_CHECKS` string is shared by both `SCORER_SYSTEM` and `SYNTHESIS_SYSTEM`.
 Synthesizer extra rule: "a model that ignored a pre-scoring check is wrong — override it."
 
-**max_tokens:** scorers = 2000, synthesizer = 2000.
+**max_tokens:** scorers = 6000, synthesizer = 6000.
 
 **Kimi-K2 JSON failures:** occasional parse errors — scorer is skipped, synthesis continues with remaining models.
 
@@ -210,17 +211,14 @@ SQLite migration discussed but not yet done.
 
 ---
 
-## LLM model status (as of 2026-05-08)
+## LLM model status (as of 2026-11-26)
 
 | Model | Status | Notes |
 |---|---|---|
-| `meta/llama-4-maverick-17b-128e-instruct` | Active — default scorer | ~6–16s, clean JSON, thin reasoning |
-| `moonshotai/kimi-k2-instruct` | Dead — HTTP 410 EOL | |
-| `moonshotai/kimi-k2.6` | Active — ensemble scorer | Replacement for kimi-k2-instruct |
-| `nvidia/llama-3.3-nemotron-super-49b-v1.5` | Active — ensemble scorer + synthesizer | Requires `nvext: {"thinking": "on"}`. 50–68s. Response in `message.content`, not `reasoning_content` |
-| `deepseek-ai/deepseek-v3.2` | Dead — HTTP 410 EOL | |
-| `deepseek-ai/deepseek-v4-flash` | Removed — severe timeout on 16k payloads | |
-| `mistralai/mistral-large-3-675b-instruct-2512` | Rejects `cache_control` field — strip it to use | |
+| `nvidia/nemotron-3-ultra-550b-a55b` | Active — quick scorer, ensemble scorer + synthesizer | ~2min on 29k-token prompts; reasons, so needs max_tokens >= 6000 |
+| `minimaxai/minimax-m3.1-flash` | Active — ensemble scorer | Fast (~15s) |
+| `moonshotai/kimi-k3.1-pro` | Too slow | ~15 tok/s: full answer exceeds the 180s client timeout. Reasons by default; `llm_client` sends `chat_template_kwargs: {thinking: false}` |
+| `meta/llama-4-maverick-17b-128e-instruct`, `meta/llama-3.x`, `moonshotai/kimi-k2*`, `nvidia/llama-3.3-nemotron-super-49b-v1.5`, `deepseek-ai/*`, `mistralai/mistral-large-3-*` | Dead — HTTP 410 EOL | NVIDIA retired them (e.g. llama-3.3-70b on 2026-08-26) |
 
 API base: `https://integrate.api.nvidia.com/v1/chat/completions` (OpenAI-compatible)
 

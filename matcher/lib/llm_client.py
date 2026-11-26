@@ -88,6 +88,9 @@ async def chat_completions(
         payload["response_format"] = response_format
     if "nemotron-super" in model:
         payload["nvext"] = {"thinking": "on"}
+    # kimi-k3 reasons by default; reasoning tokens consume max_tokens and leave content=null
+    if "kimi-k3" in model:
+        payload["chat_template_kwargs"] = {"thinking": False}
     if extra_body:
         payload = {**payload, **copy.deepcopy(extra_body)}
 
