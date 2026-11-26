@@ -21,7 +21,7 @@ from lib.json_utils import (
 )
 from lib.matching_intelligence import build_match_context_from_profile_data, format_match_context
 
-QUICK_MODEL_MAX_TOKENS = 2600
+QUICK_MODEL_MAX_TOKENS = 6000
 QUICK_MODEL_TEMPERATURE = 0.2
 
 

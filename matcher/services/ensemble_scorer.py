@@ -25,7 +25,7 @@ from lib.matching_intelligence import (
 )
 from services.quick_scorer import synthesize_jd_text
 
-DEFAULT_SYNTHESIZER = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+DEFAULT_SYNTHESIZER = "nvidia/nemotron-3-ultra-550b-a55b"
 
 ENSEMBLE_SCORE_WEIGHTS = {
     "core_skills": 0.25,
@@ -317,7 +317,7 @@ async def score_with_model(model: str, system: str, user: str) -> dict | None:
         messages = llm_client.strip_cache_control(messages)
     try:
         raw = await llm_client.chat_completions(
-            model=model, messages=messages, temperature=0.2, max_tokens=2000
+            model=model, messages=messages, temperature=0.2, max_tokens=6000
         )
         return strip_json(raw)
     except Exception:
@@ -423,7 +423,7 @@ async def score_job_ensemble(job: dict, profile_data: dict) -> dict:
                         {"role": "user", "content": synth_user},
                     ],
                     temperature=0.1,
-                    max_tokens=2000,
+                    max_tokens=6000,
                 )
             except Exception as exc:
                 raise _synthesizer_error(exc) from exc
